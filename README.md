@@ -38,10 +38,11 @@ Filamentalist Springs: https://a.co/d/0beVFlb8
 
 Here are some images to give a general idea of the project while i try to get all the other data together and uploaded.
 
+![With Filament Out](images/With%20Filament%20Out.jpg)
+
 ![Rack Drawer Slides](images/Rack%20Drawer%20Slides.jpg)
 
 ![Back Panel](images/Back%20Panel.jpg)
 
 ![Side View](images/Side%20View.jpg)
 
-![With Filament Out](images/With%20Filament%20Out.jpg)
