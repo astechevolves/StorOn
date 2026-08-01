@@ -19,7 +19,7 @@ Sealing Foam: https://a.co/d/0fpPBf9j
 
 Hardware for [Clicky Clack Door](https://github.com/tanaes/whopping_Voron_mods/blob/main/clickyclacky_door%2FREADME.md). Used 3 hinges instead of two and the door panel and sealing was longer for the larger door.  
 
-Pin Bushings for Clicky Clack: https://a.co/d/01oHRWRj \
+Pin Bushings for Clicky Clack: https://a.co/d/01oHRWRj
 
 If you want monitoring some ESP32 hardware will likely be needed too. How you monitor that data may change. I am publishing MQTT updates to Home Assistant. 
 
