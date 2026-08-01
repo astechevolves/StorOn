@@ -1,2 +1,18 @@
-# storon
-Voron printer stand and filament storage assembly
+![Storon Logo](images/Storon%20Logo.png)
+
+
+This project is a Voron printer stand that also stores filament. You have options for active dehumditifcation as well as the ability to feed your Voron (or any other printer really...) from within the stand using a [Filamentalist](https://github.com/Carrot-collective/ERCF_v2/tree/master/Recommended_Options/Filamentalist_Rewinder/Filamentalist_FV3_Rewinder) passive rewinder and an [lll-plus](https://mellow.klipper.cn/en/docs/category/fly-lll-plus-%E7%BC%93%E5%86%B2%E5%99%A8) buffer.
+
+This is rev 1 and i have lots of ideas for what it could be. I am current working on the BOM for the build as it stand and getting the models made so far prepped for upload. 
+
+At the dimensions used for my build there can be up to 14 spools on each drawer and i have 2 drwers installed for a total of 28 spools of storage. I have 5 spool across the top for the toolheads and the buffers are mounted below them. Using custom firmware with I2C controls i am connecting a single USB cable to the RasPi running klipper and controlling/monitoring the buffers. 
+
+Here are some images to give a general idea of the project while i try to get all the other data together and uploaded.
+
+![Rack Drawer Slides](images/Rack%20Drawer%20Slides.jpg)
+
+![Back Panel](images/Back%20Panel.jpg)
+
+![Side View](images/Side%20View.jpg)
+
+![With Filament Out](images/With%20Filament%20Out.jpg)
