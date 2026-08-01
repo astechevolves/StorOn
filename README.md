@@ -1,4 +1,5 @@
 ![Storon Logo](images/Storon%20Logo.png)
+Name credit to u/akir3y on reddit and chosen based on upvotes.
 
 This project is a Voron printer stand that also stores filament. You have options for active dehumditifcation as well as the ability to feed your Voron (or any other printer really...) from within the stand using a [Filamentalist](https://github.com/Carrot-collective/ERCF_v2/tree/master/Recommended_Options/Filamentalist_Rewinder/Filamentalist_FV3_Rewinder) passive rewinder and an [lll-plus](https://mellow.klipper.cn/en/docs/category/fly-lll-plus-%E7%BC%93%E5%86%B2%E5%99%A8) buffer.
 
