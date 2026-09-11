@@ -1,0 +1,9 @@
+As a reminder to myself, platformIO build commands:
+
+From the PlatformIO project folder—the one containing platformio.ini—run:
+
+`pio run -t upload`
+
+If PlatformIO doesn’t automatically select the correct serial port:
+
+`pio run -t upload --upload-port COM5`

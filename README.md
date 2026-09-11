@@ -23,13 +23,23 @@ Pin Bushings for Clicky Clack: https://a.co/d/01oHRWRj
 
 If you want monitoring some ESP32 hardware will likely be needed too. How you monitor that data may change. I am publishing MQTT updates to Home Assistant. 
 
-Power supply for hemidifier, 3VDC required: https://a.co/d/0h5Y2pVP \
-MDL-5 Dehimdifier: https://micro-dehumidifier.com/products-rosahl/membranes/ \
+Power supply for dehumidifier, 3VDC required: https://a.co/d/0h5Y2pVP \
+MDL-5 Dehumdifier: https://micro-dehumidifier.com/products-rosahl/membranes/ \
 Wiring Break out for I2C Buss on Buffers: https://a.co/d/03XT3YTJ
 
 PTFE Connectors: https://a.co/d/0i8aAcsk
 
 [LLL-Plus Buffer](https://3dmellow.com/products/mellow-lll-plus-filament-buffer-for-diy-3d-printers-klipper-rrf-marlin-material-break-detection-automatic-filament-feeding?VariantsId=10247), either whole and assembled or a kit and print your own parts. If you want to self assembly a good guide was [written here](https://www.teamfdm.com/forums/topic/7953-mellow-fly-lll-pro-filament-buffer/#comment-33137).
+
+I have done a couple of physical mods to the buffer in addition to the firmware. 
+The first mod was making the buttons taller so you can find them blind by reaching under the buffer which is mounted facing down. 
+![Buttons](images/lll-plus/Buttons.jpg)
+The second mod was to change the buffer to allow an ECAS connector. The PTFE tube port was very weak and if the buffer pushed ont he filament at all it would push the tubing out of the connector all together. This was annoying because then the buffer would drop and the filament may feed into the back of the box until the timeout was reached. Not ideal. 
+![Crappy Collar](images/lll-plus/Old%20PTFE%20Fitting.jpg)
+The third mod was to install a tougher spring ont he buffer tube. The weak spring meant any resistance ont he filament up to the print could cause sufficient back tension and that would mean the filament stops feeding. A strong spring means you are more likely to make it all the way to the head because it takes more back tension to fully extend the buffer.
+![Springs](images/lll-plus/Spring%20Comparison.jpg) 
+
+![With new parts installed](images/lll-plus/Final%20Buffer.jpg)
 
 Hardware for [Filmentalist Rollers](https://github.com/Carrot-collective/ERCF_v2/tree/master/Recommended_Options/Filamentalist_Rewinder/Filamentalist_FV3_Rewinder). \
 Filamentalist one way bearings: https://a.co/d/0h9YtOMt \
