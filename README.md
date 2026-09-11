@@ -31,7 +31,8 @@ PTFE Connectors: https://a.co/d/0i8aAcsk
 
 [LLL-Plus Buffer](https://3dmellow.com/products/mellow-lll-plus-filament-buffer-for-diy-3d-printers-klipper-rrf-marlin-material-break-detection-automatic-filament-feeding?VariantsId=10247), either whole and assembled or a kit and print your own parts. If you want to self assembly a good guide was [written here](https://www.teamfdm.com/forums/topic/7953-mellow-fly-lll-pro-filament-buffer/#comment-33137).
 
-I have done a couple of physical mods to the buffer in addition to the firmware. 
+Physical modifications have been made as outlined below and new firmware for I2C control via a single USB connection. 
+New Firmware can [be found here](https://github.com/astechevolves/lll-buffed). 
 The first mod was making the buttons taller so you can find them blind by reaching under the buffer which is mounted facing down. 
 ![Buttons](images/lll-plus/Buttons.jpg)
 The second mod was to change the buffer to allow an ECAS connector. The PTFE tube port was very weak and if the buffer pushed ont he filament at all it would push the tubing out of the connector all together. This was annoying because then the buffer would drop and the filament may feed into the back of the box until the timeout was reached. Not ideal. 
