@@ -22,12 +22,12 @@
 #define FAN_ON_MS (5UL * 60 * 1000)     // each run lasts 5 minutes
 #define LED_IDLE_PERIOD_MS 2000         // heartbeat every 2 s while the fan is off
 #define LED_FAN_PERIOD_MS 1000          // heartbeat every 1 s while the fan runs
-#define LED_BRIGHTNESS 32               // 0-255; the onboard LED is very bright
+#define LED_BRIGHTNESS 5                // 0-255; the onboard LED is very bright
 
 // ── Fan defaults (HA can change these; they're saved to flash) ──
-#define FAN_SPEED_PCT 60       // default speed for scheduled and manual runs
-#define FAN_MIN_PCT 30         // 2-wire fans may stall below ~30-40%
-#define FAN_MANUAL_RUN_MIN 30  // a manual "on" from HA runs this long (0 = until turned off)
+#define FAN_SPEED_PCT 60      // default speed for scheduled and manual runs
+#define FAN_MIN_PCT 30        // 2-wire fans may stall below ~30-40%
+#define FAN_MANUAL_RUN_MIN 30 // a manual "on" from HA runs this long (0 = until turned off)
 #define FAN_MAX_RUN_MIN 240
 
 // ── MQTT topics ───────────────────────────────────────────
