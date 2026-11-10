@@ -15,16 +15,17 @@ An ESP32-S3 inside the stand that watches the filament and the spools:
 3. Enter WiFi, MQTT, and which lanes have readers, then **Save and reboot**.
 4. Open http://filament-monitor.local/
 
-Everything below is the detail: [hardware](#hardware), [install](#installing-the-firmware), [setup](#setup), [web UI](#web-ui), [spool tags](#spool-tags), [Spoolman](#spoolman), [printer](#printer-link-moonraker), [Home Assistant](#home-assistant-mqtt), [API](#json-api), [building](#building-from-source), [limitations](#known-limitations), [references](#references).
+Everything below is the detail: [hardware](#hardware), [reader wiring](#reader-wiring-cat5), [install](#installing-the-firmware), [setup](#setup), [web UI](#web-ui), [spool tags](#spool-tags), [Spoolman](#spoolman), [printer](#printer-link-moonraker), [Home Assistant](#home-assistant-mqtt), [API](#json-api), [building](#building-from-source), [limitations](#known-limitations), [references](#references).
 
 ---
 
 ## Hardware
 
 - ESP32-S3 DevKitC-1, **N16R8** (16 MB flash, 8 MB PSRAM)
-- RC522 RFID reader per lane, with a ferrite sheet behind each so it reads only its own spool
+- RC522 RFID reader per lane, with a ferrite sheet behind each so it reads only its own spool: [the ones used here](https://a.co/d/05OYSE5E) (6-pack, 3.3 V, SPI)
 - 2× DHT22 (top and bottom of the cabinet)
 - Circulation fan (PWM) and the onboard WS2812 status LED
+- NTAG215 stickers (25 mm) for spools without a Bambu tag, written as OpenTag3D: [the ones used here](https://a.co/d/06WTXhvL) (60-pack, 10 anti-metal and 50 standard)
 
 Default pins (all can be changed on the Settings page; use `-1` for anything not fitted):
 
@@ -37,6 +38,42 @@ Default pins (all can be changed on the Settings page; use `-1` for anything not
 | Lane 1–6 SS ("SDA" on the RC522) | 10, 9, 8, 7, 6, 15 |
 
 All readers share the SPI bus. Each lane has its own SS pin.
+
+### Reader wiring (Cat5)
+
+**Short version:** two Cat5 cables, each daisy-chained through up to 3 readers. Each reader has an 8-pin screw terminal soldered in place of its header. Each cable's clock line has a 39 Ω resistor at the ESP32 end. The readers are powered from the ESP32's 3V3 pin.
+
+Both cables are wired the same way except for the SS pins:
+
+| Cat5 wire | Signal | RC522 pin | Cable 1 (lanes 1–3) | Cable 2 (lanes 4–6) |
+|---|---|---|---|---|
+| Orange | SCK | SCK | GPIO 12 through 33–47 Ω (39 Ω used) | GPIO 12 through its own 33–47 Ω |
+| White/Orange | GND | GND | GND | GND |
+| Green | MOSI | MOSI | GPIO 11 | GPIO 11 |
+| White/Green | 3.3 V | 3.3V | ESP32 3V3 | ESP32 3V3 |
+| Blue | MISO | MISO | GPIO 13 | GPIO 13 |
+| White/Blue | SS, 1st reader | SDA | GPIO 10 (lane 1) | GPIO 7 (lane 4) |
+| Brown | SS, 2nd reader | SDA | GPIO 9 (lane 2) | GPIO 6 (lane 5) |
+| White/Brown | SS, 3rd reader | SDA | GPIO 8 (lane 3) | GPIO 15 (lane 6, spare with 5 readers) |
+
+Each color is twisted with its white-striped partner, so SCK shares a pair with GND, which keeps the clock clean.
+
+**At each reader**
+- Solder an 8-position 2.54 mm screw terminal into the RC522's header holes ([these](https://a.co/d/07W0wmXX), 8P size).
+- Strip a 3–4 cm window of jacket without cutting the cable. Cut only the five bus wires and this reader's SS wire. Leave the other SS wires running on to their readers.
+- Put the incoming and outgoing ends of each bus wire in the same terminal. This reader's SS wire goes alone in SDA.
+- Jumper RST to 3.3V. Leave IRQ empty.
+- Zip-tie the cable to the mount for strain relief, and recheck the screws after a day or two. Don't tin the solid wire ends.
+
+**At the ESP32**
+- The ESP32-S3 sits on a [44-pin screw-terminal breakout](https://a.co/d/06jYdxeh).
+- Join both cables' MOSI to GPIO 11 and MISO to GPIO 13. Each cable's SCK goes to GPIO 12 through its own 39 Ω series resistor.
+- Both white/green wires go to the ESP32's 3V3 pin, and both white/orange wires go to GND.
+- Five readers on the DevKit's 3V3 regulator has worked so far, but it's near the regulator's limit with WiFi active. If readers drop out or the board resets, feed the readers from a separate 3.3 V supply instead. Tie its ground to the ESP32's GND, and put a 470 µF capacitor across it where the reader feed starts.
+
+![Rev 1 RFID reader holders](../images/esp32/reader-holders-rev1.png)
+
+*Rev 1 reader holders (blue), one beside each lane, facing the side of the spool.*
 
 ## Installing the firmware
 
