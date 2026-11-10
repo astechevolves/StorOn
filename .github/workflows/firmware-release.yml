@@ -41,8 +41,10 @@ jobs:
             ~/.cache/pip
           key: pio-${{ runner.os }}-${{ hashFiles('ESP32 Inside Cabinet/platformio.ini') }}
 
-      - name: Install PlatformIO
-        run: pip install --upgrade platformio
+      - name: Install PlatformIO and esptool
+        # esptool comes from pip: newer PlatformIO tool-esptoolpy packages no
+        # longer ship esptool.py. Pinned below v5 to keep the merge_bin syntax.
+        run: pip install --upgrade platformio "esptool>=4.7,<5"
 
       - name: Version
         run: |
@@ -63,7 +65,8 @@ jobs:
           # Same layout "pio run -t upload" writes: bootloader, partition
           # table, OTA data, app
           BOOT_APP0=$(find ~/.platformio/packages/framework-arduinoespressif32 -name boot_app0.bin | head -1)
-          python ~/.platformio/packages/tool-esptoolpy/esptool.py --chip esp32s3 merge_bin \
+          if [ -z "$BOOT_APP0" ]; then echo "boot_app0.bin not found"; exit 1; fi
+          python -m esptool --chip esp32s3 merge_bin \
             -o "$OUT/$NAME-full.bin" --flash_mode keep --flash_freq keep --flash_size keep \
             0x0 "$B/bootloader.bin" 0x8000 "$B/partitions.bin" 0xe000 "$BOOT_APP0" 0x10000 "$B/firmware.bin"
           cd "$OUT" && sha256sum *.bin > SHA256SUMS.txt && cat SHA256SUMS.txt
