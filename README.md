@@ -3,6 +3,11 @@ Name credit to u/akir3y on reddit and chosen based on upvotes.
 
 This project is a Voron printer stand that also stores filament. You have options for active dehumditifcation as well as the ability to feed your Voron (or any other printer really...) from within the stand using a [Filamentalist](https://github.com/Carrot-collective/ERCF_v2/tree/master/Recommended_Options/Filamentalist_Rewinder/Filamentalist_FV3_Rewinder) passive rewinder and an [lll-plus](https://mellow.klipper.cn/en/docs/category/fly-lll-plus-%E7%BC%93%E5%86%B2%E5%99%A8) buffer.
 
+**Electronics and software**
+- [ESP32 Inside Cabinet](ESP32%20Inside%20Cabinet/README.md): humidity/temperature monitoring, fan, per-lane RFID spool tags (Bambu and OpenTag3D), Spoolman sync, and a web UI.
+- [Klipper Macros](Klipper%20Macros/README.md): tracks each tool's loaded/unloaded state for the ESP32 and blocks prints on unloaded tools.
+- OrcaSlicer: the [Orca Spoolman Presets](https://github.com/DIEHARDave/orca_spoolman_presets) plugin (by DIEHARDave) fills the filament slots from the spool loaded on each tool, using the `lane_data` the ESP32 writes.
+
 This is rev 1 and i have lots of ideas for what it could be. I am current working on the BOM for the build as it stand and getting the models made so far prepped for upload. 
 
 At the dimensions used for my build there can be up to 14 spools on each drawer and i have 2 drawers installed for a total of 28 spools of storage. I have 5 spools across the top for the toolheads and the buffers are mounted below them. Using [custom lll-plus firmware](https://github.com/astechevolves/lll-buffed) with I2C controls i am connecting a single USB cable to the RasPi running klipper and controlling/monitoring the buffers. 
@@ -52,9 +57,10 @@ Here are some images to give a general idea of the project while i try to get al
 
 ![With Filament Out](images/With%20Filament%20Out.jpg)
 
+![Side View](images/Side%20View.jpg)
+
 ![Rack Drawer Slides](images/Rack%20Drawer%20Slides.jpg)
 
 ![Back Panel](images/Back%20Panel.jpg)
 
-![Side View](images/Side%20View.jpg)
 
