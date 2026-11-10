@@ -1,0 +1,91 @@
+# Builds the StorOn ESP32 firmware and publishes it as a GitHub Release.
+#
+# Release: push a version tag, e.g.
+#   git tag v0.4.0 && git push origin v0.4.0
+# The tag (without the "v") becomes the firmware version shown in the web UI.
+#
+# Assets on the release:
+#   storon-<tag>-update.bin  update a running StorOn: Settings -> Firmware update
+#   storon-<tag>-full.bin    first install on a blank ESP32-S3: flash at 0x0
+#   SHA256SUMS.txt
+#
+# "Run workflow" (manual) builds without releasing; the files are attached to
+# the run as an artifact for testing.
+name: Firmware release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ESP32 Inside Cabinet
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio
+            ~/.cache/pip
+          key: pio-${{ runner.os }}-${{ hashFiles('ESP32 Inside Cabinet/platformio.ini') }}
+
+      - name: Install PlatformIO
+        run: pip install --upgrade platformio
+
+      - name: Version
+        run: |
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then V="${GITHUB_REF_NAME#v}"; else V="dev-${GITHUB_SHA::7}"; fi
+          echo "VERSION=$V" >> "$GITHUB_ENV"
+          echo "Building version $V"
+
+      - name: Build
+        run: PLATFORMIO_BUILD_FLAGS="-DFW_VERSION=\\\"$VERSION\\\"" pio run
+
+      - name: Package
+        run: |
+          B=.pio/build/esp32-s3-devkitc-1
+          OUT="$GITHUB_WORKSPACE/dist"
+          mkdir -p "$OUT"
+          NAME="storon-v$VERSION"
+          cp "$B/firmware.bin" "$OUT/$NAME-update.bin"
+          # Same layout "pio run -t upload" writes: bootloader, partition
+          # table, OTA data, app
+          BOOT_APP0=$(find ~/.platformio/packages/framework-arduinoespressif32 -name boot_app0.bin | head -1)
+          python ~/.platformio/packages/tool-esptoolpy/esptool.py --chip esp32s3 merge_bin \
+            -o "$OUT/$NAME-full.bin" --flash_mode keep --flash_freq keep --flash_size keep \
+            0x0 "$B/bootloader.bin" 0x8000 "$B/partitions.bin" 0xe000 "$BOOT_APP0" 0x10000 "$B/firmware.bin"
+          cd "$OUT" && sha256sum *.bin > SHA256SUMS.txt && cat SHA256SUMS.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: storon-firmware-${{ env.VERSION }}
+          path: dist/*
+
+      - name: Publish release
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
+          body: |
+            ## Installing
+
+            **Updating a running StorOn:** download `storon-${{ github.ref_name }}-update.bin`, open StorOn's **Settings** page, and upload it under **Firmware update**. Settings, lanes and spool links are kept.
+
+            **First install on a blank ESP32-S3 (N16R8):** flash `storon-${{ github.ref_name }}-full.bin` at offset `0x0`, either in the browser with [ESP Web Flasher](https://espressif.github.io/esptool-js/) (Chrome or Edge) or with esptool:
+            ```
+            esptool.py --chip esp32s3 write_flash 0x0 storon-${{ github.ref_name }}-full.bin
+            ```
+            Then join the `StorOn-Setup-XXXX` WiFi hotspot (password `storonsetup`) to set it up.
