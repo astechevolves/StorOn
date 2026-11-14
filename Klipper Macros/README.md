@@ -68,6 +68,42 @@ spool until an unload, a different tag, or **Clear** in StorOn's web UI.
 6. In StorOn's web UI, Settings: set the **Moonraker URL** and which tool each
    lane **feeds**. The status page should show **Printer link: connected**.
 
+## Optional: spool colors on Mainsail's tool buttons
+
+Mainsail colors each T<n> button from the Spoolman spool in the T<n>
+macro's `spool_id` (or the macro's `variable_color` when it has none).
+StorOn sets `spool_id` to the spool in the lane feeding the tool, through
+`STORON_TOOL_SPOOL`.
+
+1. Add this to each `[gcode_macro T<n>]`:
+   ```
+   variable_spool_id: None
+   ```
+   Tools without it are left alone.
+2. With `[save_variables]`, `STORON_TOOL_SPOOL` saves each tool's spool as
+   `t<n>__spool_id`. That's the key Mainsail's own spool picker uses. Klipper
+   resets `spool_id` on a restart, so restore it from a `[delayed_gcode]`
+   that runs at startup:
+   ```
+   {% if printer.save_variables is defined %}
+       {% set sv = printer.save_variables.variables %}
+       {% for n in printer.toolchanger.tool_numbers %}
+           {% set key = "t" ~ n ~ "__spool_id" %}
+           {% if key in sv and ("gcode_macro T" ~ n) in printer %}
+               {% set id = sv[key]|int(0) if sv[key] is not none else 0 %}
+               SET_GCODE_VARIABLE MACRO=T{n} VARIABLE=spool_id VALUE={id if id > 0 else None}
+           {% endif %}
+       {% endfor %}
+   {% endif %}
+   ```
+   StorOn sets it again within a few seconds of its link coming up either
+   way. The restore just keeps the right color showing until then.
+
+A lane with a spool wins: picking a different spool for that tool in
+Mainsail gets reset to the lane's spool. When the lane's spool is released
+(the tool is unloaded), the tool's spool is cleared. A tool whose lane has
+had no spool since StorOn connected keeps whatever was picked in Mainsail.
+
 ## Example in use
 
 The StorOn build's own printer (a 5-tool klipper-toolchanger with LLL-Plus

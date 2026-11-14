@@ -7,6 +7,8 @@
 //   tool goes unloaded -> release the spool held in the lane feeding it
 //   tool goes loaded   -> log it; the lane's held spool is that tool's spool
 // Only changes count, so a Klipper restart never releases a lane.
+// It also keeps each T<n> macro's spool_id (Mainsail's tool button color)
+// on the spool in the lane feeding that tool, through STORON_TOOL_SPOOL.
 
 void updateMoonraker(unsigned long now);
 // -1 unknown / no link, 0 unloaded, 1 loaded

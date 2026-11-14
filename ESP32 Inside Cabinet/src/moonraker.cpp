@@ -26,6 +26,14 @@ static unsigned long mismatchSince[MAX_TOOLS]; // when state and sensor started 
 static String laneDataSent[MAX_TOOLS];         // what was last written per tool
 static unsigned long lastLaneData = 0;
 static void syncLaneData(unsigned long now);
+// Tool spool sync: Mainsail colors its tool buttons from the T<n> macro's
+// spool_id (that Spoolman spool's color). StorOn sets it through
+// STORON_TOOL_SPOOL.
+static long toolSpool[MAX_TOOLS];     // T<n>.spool_id on the printer: -1 no such variable, 0 none
+static long laneSpoolSent[MAX_TOOLS]; // lane spool last seen per tool, -1 none seen since link up
+static unsigned long spoolRetryAt = 0; // after a failed STORON_TOOL_SPOOL, wait until then
+#define TOOL_SPOOL_RETRY_MS 60000
+static void syncToolSpools(unsigned long now);
 
 int toolLoaded(int tool)
 {
@@ -69,6 +77,8 @@ void updateMoonraker(unsigned long now)
     name.replace(" ", "%20");
     q += "&filament_switch_sensor%20" + name + "=filament_detected";
   }
+  for (int t = 0; t < toolCount; t++) // each tool's spool_id (absent when T<n> lacks it)
+    q += "&gcode_macro%20T" + String(t) + "=spool_id";
   HTTPClient http;
   http.setTimeout(2000);
   http.begin(String(cfg.moonrakerUrl) + q);
@@ -108,6 +118,9 @@ void updateMoonraker(unsigned long now)
     logEvent("Printer link up (%s)", cfg.moonrakerUrl);
     for (String &s : laneDataSent)
       s = ""; // write everything again
+    for (long &s : laneSpoolSent)
+      s = -1; // a lane with no spool must not clear a spool picked by hand
+    spoolRetryAt = 0;
   }
   JsonObjectConst st = doc["result"]["status"];
   printState = st["print_stats"]["state"] | "";
@@ -148,8 +161,17 @@ void updateMoonraker(unsigned long now)
       mismatchSince[t] = 0;
     else if (!mismatchSince[t])
       mismatchSince[t] = now | 1;
+
+    // T<n>.spool_id: -1 when the macro or its variable is missing (an
+    // object queried for an unknown attribute comes back as {})
+    toolSpool[t] = -1;
+    JsonObjectConst tm = st[String("gcode_macro T") + t];
+    for (JsonPairConst p : tm)
+      if (p.key() == "spool_id")
+        toolSpool[t] = p.value().is<long>() ? max(p.value().as<long>(), 0L) : 0;
   }
   syncLaneData(now);
+  syncToolSpools(now);
 }
 
 // Slicer filament sync: Moonraker's "lane_data" database holds one record
@@ -330,6 +352,54 @@ static bool runGcode(const String &script, String &err, bool &finished)
   err = msg.length() ? "Printer: " + msg
                      : code < 0 ? String("Moonraker unreachable") : String("Moonraker HTTP ") + code;
   return false;
+}
+
+// Keep each tool's T<n>.spool_id on the lane's spool, through
+// STORON_TOOL_SPOOL (storon.cfg; it also saves it in [save_variables]).
+//   lane has a spool          -> the tool gets it (StorOn's tag wins over a
+//                                pick made in Mainsail)
+//   lane's spool goes away    -> the tool's spool_id is cleared
+//   lane has had no spool     -> the tool is left alone, so a spool picked
+//     since StorOn's link came    by hand in Mainsail stays
+//     up
+// Tools whose T<n> macro has no variable_spool_id are skipped. Compared with
+// the printer's own value every poll, so a Klipper restart or an edit in
+// Mainsail is put right by the next poll. One command per poll, and none
+// while the printer is busy.
+static void syncToolSpools(unsigned long now)
+{
+  String why;
+  if (!connected || printerBusy(why) || (spoolRetryAt && (long)(now - spoolRetryAt) < 0))
+    return;
+  for (int lane = 0; lane < MAX_LANES; lane++)
+  {
+    int tool = cfg.laneTool[lane];
+    if (!laneActive(lane) || tool < 0 || tool >= toolCount || toolSpool[tool] < 0)
+      continue;
+    JsonDocument f;
+    laneFilamentJson(lane, f.to<JsonObject>());
+    long spool = f["spool_id"] | 0L;
+    bool push = spool > 0 ? spool != toolSpool[tool] : laneSpoolSent[tool] > 0 && toolSpool[tool] > 0;
+    if (!push)
+    {
+      laneSpoolSent[tool] = spool;
+      continue;
+    }
+    String script = "STORON_TOOL_SPOOL TOOL=" + String(tool) + " SPOOL=" + String(spool);
+    String err;
+    bool finished;
+    if (!runGcode(script, err, finished))
+    {
+      logEvent("Lane %d: %s failed: %s (retrying in a minute)", lane + 1, script.c_str(), err.c_str());
+      spoolRetryAt = (now + TOOL_SPOOL_RETRY_MS) | 1;
+      return;
+    }
+    spoolRetryAt = 0;
+    laneSpoolSent[tool] = spool;
+    toolSpool[tool] = spool; // until the next poll reads it back
+    logEvent("Lane %d: T%d spool = %s", lane + 1, tool, spool > 0 ? String(spool).c_str() : "none");
+    return; // one command per poll
+  }
 }
 
 // Fill a command template. A word holding a placeholder without a value is
