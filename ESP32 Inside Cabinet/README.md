@@ -157,6 +157,7 @@ With a Spoolman URL set, the ESP32 syncs on its own. Home Assistant isn't needed
 - **Location:** when a tag settles in a lane, that spool's location becomes `<location> Lane N`. When it leaves, the location is cleared or set to the "away" location, but only if it's still ours.
 - **Link / create:** from the lane's Spoolman button. Creating finds or makes the filament from the tag data. Creating a spool shows a preview first.
 - **Tag already used by another spool:** refused unless you choose to move it. Moving takes the tag off the old spool, and the old spool can be archived.
+- **Remaining weight:** each lane's spool is re-read from Spoolman every 60 s, and again right after a print ends or its tool is loaded or unloaded. Moonraker deducts filament from the active spool as it prints, so the weight in the web UI and in `lane_data` stays current without rescanning. Changes under 1 g are ignored. If Spoolman can't be reached, the last weight is kept. If the spool was deleted, the tag is matched again as if rescanned: the lane picks up whichever spool has the tag now, or shows "Not linked" if none does.
 
 ## Printer link (Moonraker)
 

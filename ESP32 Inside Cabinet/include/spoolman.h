@@ -27,6 +27,10 @@ void spoolSyncJson(int lane, JsonObject out);
 bool spoolSyncLink(int lane, int spoolId, bool move, bool archiveOld, String &err);
 // Re-read every lane's spool from Spoolman (after an edit made elsewhere)
 void spoolSyncRefreshAll();
+// Lanes with a spool re-read their remaining weight every 60 s (one HTTP call
+// per sync step). This moves the next refresh up to now, for the lanes
+// feeding tool (or every lane when tool < 0): after a print or a tool change.
+void spoolSyncWeightsSoon(int tool = -1);
 // Nozzle temp for the lane's spool (Spoolman filament, else the tag), 0 if
 // unknown; material likewise ("" if unknown)
 int laneNozzleTemp(int lane, String &material);

@@ -7,6 +7,8 @@
 
 #define SYNC_STEP_MS 1000   // at most one Spoolman sync per second
 #define SYNC_RETRY_MS 60000 // retry after Spoolman was unreachable
+#define WEIGHT_REFRESH_MS 60000 // re-read a lane's spool weight this often
+#define WEIGHT_TIMEOUT_MS 2000  // short, so a slow Spoolman doesn't stall the loop
 
 static String spoolUrl(int id) { return String(cfg.spoolmanUrl) + "/api/v1/spool/" + id; }
 static String hex6(const char *color);
@@ -188,6 +190,8 @@ struct LaneSync
   String orcaId;          // filament extra "orca_filament_id" (RFC 0001 §6)
   String error; // last problem, shown in the UI
   bool force = false; // re-check Spoolman even though the key is unchanged
+  unsigned long weightAt = 0; // next remaining-weight refresh
+  bool weightFailed = false;  // last refresh failed (logged once until it works again)
 };
 static LaneSync syncs[MAX_LANES];
 
@@ -410,8 +414,84 @@ static void syncLane(int i, unsigned long now)
   s.initial = m.initial;
   s.orcaId = m.orcaId;
   s.error = "";
+  s.weightAt = now + WEIGHT_REFRESH_MS; // just read
+  s.weightFailed = false;
   logEvent("Lane %d: Spoolman spool #%d %s", i + 1, m.id, m.name.c_str());
   publishTagState(i);
+}
+
+// Re-read the lane's spool weights. Moonraker deducts filament from the active
+// spool in Spoolman while printing, so this keeps remaining_weight_g in
+// lane_data (OrcaSlicer's fill level) current without a rescan.
+//   unreachable / other error -> weights kept, logged once, retried next round
+//   404 (spool deleted)       -> the tag is matched again, as after a rescan:
+//                                a spool that took over the tag is picked up,
+//                                otherwise the lane shows "Not linked" and
+//                                spool_id is cleared. (Archived spools still
+//                                answer 200 and keep updating.)
+static void refreshWeight(int i, unsigned long now)
+{
+  LaneSync &s = syncs[i];
+  s.weightAt = now + WEIGHT_REFRESH_MS;
+  HTTPClient http;
+  http.setTimeout(WEIGHT_TIMEOUT_MS);
+  http.setConnectTimeout(WEIGHT_TIMEOUT_MS);
+  if (!http.begin(spoolUrl(s.spoolId)))
+    return;
+  int code = http.GET();
+  if (code == 404)
+  {
+    http.end();
+    logEvent("Lane %d: Spoolman spool #%d is gone; matching the tag again", i + 1, s.spoolId);
+    s.force = true;
+    spoolSyncLaneChanged(i);
+    return;
+  }
+  JsonDocument filter;
+  filter["remaining_weight"] = true;
+  filter["initial_weight"] = true;
+  filter["filament"]["weight"] = true;
+  JsonDocument doc;
+  DeserializationError e = DeserializationError::Ok;
+  if (code == 200)
+    e = deserializeJson(doc, http.getStream(), DeserializationOption::Filter(filter));
+  http.end();
+  if (code != 200 || e)
+  {
+    if (!s.weightFailed)
+      logEvent("Lane %d: couldn't refresh spool #%d weight (%s); keeping the last value", i + 1,
+               s.spoolId,
+               code < 0 ? HTTPClient::errorToString(code).c_str()
+               : e      ? e.c_str()
+                        : (String("HTTP ") + code).c_str());
+    s.weightFailed = true;
+    return;
+  }
+  s.weightFailed = false;
+
+  // Only changes of 1 g or more, so lane_data isn't rewritten every minute
+  float remaining = doc["remaining_weight"] | -1.0f;
+  float initial = doc["initial_weight"] | (doc["filament"]["weight"] | -1.0f);
+  bool changed = false;
+  if (remaining >= 0 && (s.remaining < 0 || fabsf(remaining - s.remaining) >= 1.0f))
+  {
+    s.remaining = remaining;
+    changed = true;
+  }
+  if (initial > 0 && (s.initial <= 0 || fabsf(initial - s.initial) >= 1.0f))
+  {
+    s.initial = initial;
+    changed = true;
+  }
+  if (changed)
+    publishTagState(i);
+}
+
+void spoolSyncWeightsSoon(int tool)
+{
+  for (int i = 0; i < MAX_LANES; i++)
+    if (syncs[i].spoolId > 0 && (tool < 0 || cfg.laneTool[i] == tool))
+      syncs[i].weightAt = millis();
 }
 
 void updateSpoolSync(unsigned long now)
@@ -420,7 +500,8 @@ void updateSpoolSync(unsigned long now)
   if (!cfg.spoolmanUrl[0] || WiFi.status() != WL_CONNECTED || now - lastStep < SYNC_STEP_MS)
     return;
   lastStep = now;
-  // One lane per step, so a slow Spoolman never stalls the loop for long
+  // One lane, one HTTP call per step, so a slow Spoolman never stalls the
+  // loop for long. Tag matching goes first; weight refreshes fill the gaps.
   static int next = 0;
   for (int n = 0; n < MAX_LANES; n++)
   {
@@ -429,6 +510,18 @@ void updateSpoolSync(unsigned long now)
     {
       next = (i + 1) % MAX_LANES;
       syncLane(i, now);
+      return;
+    }
+  }
+  static int nextWeight = 0;
+  for (int n = 0; n < MAX_LANES; n++)
+  {
+    int i = (nextWeight + n) % MAX_LANES;
+    if (laneActive(i) && syncs[i].spoolId > 0 && !syncs[i].pending &&
+        (long)(now - syncs[i].weightAt) >= 0)
+    {
+      nextWeight = (i + 1) % MAX_LANES;
+      refreshWeight(i, now);
       return;
     }
   }

@@ -44,6 +44,7 @@ int toolLoaded(int tool)
 
 static void toolChanged(int tool, int before, int after)
 {
+  spoolSyncWeightsSoon(tool); // the spool may have just been used
   for (int lane = 0; lane < MAX_LANES; lane++)
   {
     if (!laneActive(lane) || cfg.laneTool[lane] != tool)
@@ -123,7 +124,11 @@ void updateMoonraker(unsigned long now)
     spoolRetryAt = 0;
   }
   JsonObjectConst st = doc["result"]["status"];
+  String wasPrinting = printState;
   printState = st["print_stats"]["state"] | "";
+  if ((wasPrinting == "printing" || wasPrinting == "paused") && printState != "printing" &&
+      printState != "paused")
+    spoolSyncWeightsSoon(); // print ended: Spoolman has the used filament now
   idleState = st["idle_timeout"]["state"] | "";
   tcStatus = st["toolchanger"]["status"] | "";
   // Older storon.cfg has no sensor_pattern: assume the usual naming. An
