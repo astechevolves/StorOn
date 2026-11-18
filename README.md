@@ -39,14 +39,14 @@ In the works and being tested is RFID reading of spools using an ESP32 inside th
 - OrcaSlicer: the [Orca Spoolman Presets](https://github.com/DIEHARDave/orca_spoolman_presets) plugin (by DIEHARDave) fills the filament slots from the spool loaded on each tool, using the `lane_data` the ESP32 writes.
 
 
-<img src="images/With%20Filament%20Out.jpg" alt="With Filament Out" width="500"> <img src="images/Side%20View.jpg" alt="Side View" width="500">
+<img src="images/With%20Filament%20Out.jpg" alt="With Filament Out" width="350"> <img src="images/Side%20View.jpg" alt="Side View" width="350">
 
-<img src="images/Rack%20Drawer%20Slides.jpg" alt="Rack Drawer Slides" width="500"> <img src="images/Back%20Panel.jpg" alt="Back Panel" width="500">
+<img src="images/Rack%20Drawer%20Slides.jpg" alt="Rack Drawer Slides" width="350"> <img src="images/Back%20Panel.jpg" alt="Back Panel" width="350">
 
 
 At the dimensions used for my build there can be up to 14-16 spools on each drawer (depending on spool width) and i have 2 drawers installed for a total of 28-32 spools of storage. I currently have 5 spools across the top for the toolheads and the buffers are mounted below them. Using [custom lll-plus firmware](https://github.com/astechevolves/lll-buffed) with I2C controls i am connecting a single USB cable to the RasPi running klipper and controlling/monitoring the buffers. 
 
-Some used parts:\
+Some used parts:\Kv
 Rack Slides: I did not purchase any as i had some on hand. If i build another one ill need to buy some to test fits. \
 2020 Aluminum Extrusion: https://a.co/d/0fAiQeXf \
 2040 Aluminum Extrusion: https://a.co/d/03j1iFax \

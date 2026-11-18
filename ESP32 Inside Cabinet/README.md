@@ -82,6 +82,7 @@ Prebuilt firmware is on the [Releases](https://github.com/astechevolves/storon/r
 - **First install** on a blank board: flash `storon-vX.Y.Z-full.bin` at `0x0`, in Chrome or Edge with [ESP Web Flasher](https://espressif.github.io/esptool-js/), or with
   `esptool.py --chip esp32s3 write_flash 0x0 storon-vX.Y.Z-full.bin`.
 - **Updating:** upload `storon-vX.Y.Z-update.bin` on the Settings page under **Firmware update**. Settings and spool links are kept.
+- **PlatformIO (build it yourself):** if you have some coding experience, you can skip the .bin files. Clone the repo, open this folder in VS Code with the [PlatformIO extension](https://platformio.org/install/ide?install=vscode), plug the ESP32-S3 in over USB and click **Upload** (the → arrow in the bottom status bar), or run `pio run -t upload` from this folder. It writes the bootloader, partition table and firmware, so it works for a first install and for updates. See [Building from source](#building-from-source).
 
 ## Setup
 
