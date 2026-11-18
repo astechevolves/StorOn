@@ -91,4 +91,12 @@ jobs:
             ```
             esptool.py --chip esp32s3 write_flash 0x0 storon-${{ github.ref_name }}-full.bin
             ```
+
+            **Build and flash with PlatformIO (alternative to the .bin files):** if you're comfortable with a bit of coding, you can build from source instead. Download the source code below (or clone the repo), open the `ESP32 Inside Cabinet` folder in VS Code with the [PlatformIO extension](https://platformio.org/install/ide?install=vscode), plug in the ESP32-S3 over USB and click **Upload** (the → arrow in the bottom status bar). From a terminal in that folder, the same thing is:
+            ```
+            pio run -t upload
+            pio run -t upload --upload-port COM5   # if the port isn't found
+            ```
+            This writes the bootloader, partition table and firmware, so it works on a blank board too. Later updates can be done the same way, or through the web UI. To pre-fill WiFi and MQTT, copy `include/config.example.h` to `include/config.h` before building.
+
             Then join the `StorOn-Setup-XXXX` WiFi hotspot (password `storonsetup`) to set it up.
