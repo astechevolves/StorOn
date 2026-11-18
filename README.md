@@ -44,7 +44,7 @@ In the works and being tested is RFID reading of spools using an ESP32 inside th
 <img src="images/Rack%20Drawer%20Slides.jpg" alt="Rack Drawer Slides" width="500"> <img src="images/Back%20Panel.jpg" alt="Back Panel" width="500">
 
 
-At the dimensions used for my build there can be up to 14-16 spools on each drawer (depending on spool width) and i have 2 drawers installed for a total of 28-32 spools of storage. I currently have 5 spools across the top for the toolheads and the buffers are mounted below them. Using [custom lll-plus firmware](https://github.com/astechevolves/lll-buffed) with I2C controls i am connecting a single USB cable to the RasPi running klipper and controlling/monitoring the buffers. 
+At the dimensions used for my build there can 14-16 spools on each drawer (depending on spool width) and i have 2 drawers installed for a total of 28-32 spools of storage. I currently have 5 spools across the top for the toolheads and the buffers are mounted below them. Using [custom lll-plus firmware](https://github.com/astechevolves/lll-buffed) with I2C controls i am connecting a single USB cable to the RasPi running klipper and controlling/monitoring the buffers. 
 
 Some used parts:\
 Rack Slides: I did not purchase any as i had some on hand. If i build another one ill need to buy some to test fits. \
