@@ -93,7 +93,7 @@ static const char STATUS_HTML[] PROGMEM = PAGE_HEAD("StorOn") PAGE_HEADER(" clas
 <div class="card" id="writer" hidden></div>
 <div class="card"><h2>Event log</h2><div class="log mono" id="log"></div></div>
 </main>
-<div id="spoolDlg" class="modal" hidden></div><div id="toast" class="toast" hidden></div>
+<div id="spoolDlg" class="modal" hidden></div><div id="matDlg" class="modal" hidden onclick="closeMatDlg()"></div><div id="asgDlg" class="modal" hidden onclick="closeAssign()"></div><div id="toast" class="toast" hidden></div>
 <script>
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -132,10 +132,29 @@ function toolCell(l){
  if(b.length)h+=`<div class="actions" style="margin-top:4px">${b.join('')}</div>`;
  if(l.tool_mismatch){const want=l.tool_sensor?'loaded':'unloaded';
   h+=`<div class="warn" style="margin-top:4px">Sensor sees ${l.tool_sensor?'filament':'no filament'}</div>`+
-   `<button class="sec sm" onclick="toolAction(${l.lane},'mark_${want}')"${dis}>Mark ${want}</button>`}
- return h;
+   `<button class="sec sm" onclick="toolAction(${l.lane},'mark_${want}')"${dis}>Mark ${want}</button>`} return h;
+}
+// Load: the tool is unloaded, so nothing can tell what is going in. Ask for
+// the material and send it with the load, so the printer doesn't ask again.
+const LOAD_MATS=['PLA','PETG','TPU','ABS','ASA'];
+function openMatDlg(lane){
+ const l=status.lanes.find(x=>x.lane==lane),T='T'+l.tool,box=$('matDlg');
+ box.innerHTML=`<div class="card" style="max-width:420px" onclick="event.stopPropagation()"><div class="row" style="justify-content:space-between"><h2 style="margin:0">Load ${T} · lane ${lane}</h2><button class="sec sm" onclick="closeMatDlg()">Cancel</button></div>
+ <p class="hint">Pick the material going into ${T}. The printer heats ${T} for it and feeds the filament.</p>
+ <div class="actions">${LOAD_MATS.map(m=>`<button onclick="loadWith(${lane},'${m}')">${m}</button>`).join('')}</div>
+ <div class="row" style="margin-top:10px"><span id="matMsg"></span></div></div>`;
+ box.hidden=false;
+}
+function closeMatDlg(){$('matDlg').hidden=true;$('matDlg').innerHTML=''}
+async function loadWith(lane,material){
+ document.querySelectorAll('#matDlg button').forEach(b=>b.disabled=true);
+ $('matMsg').className='muted';$('matMsg').textContent=`Sending ${material} load…`;
+ try{const d=await smFetch(`/api/lane/tool?lane=${lane}&action=load&material=${material}`,{method:'POST'});closeMatDlg();showToast(d.message)}
+ catch(e){$('matMsg').className='bad';$('matMsg').textContent=e.message;document.querySelectorAll('#matDlg button').forEach(b=>b.disabled=false);return}
+ refresh();
 }
 async function toolAction(lane,action){
+ if(action=='load')return openMatDlg(lane);
  const l=status.lanes.find(x=>x.lane==lane),T='T'+l.tool,at=l.nozzle_temp?` at ${l.nozzle_temp} °C`:'';
  const ask={load:`Load ${T} from lane ${lane}${at}?\n\nThe printer heats ${T} and feeds the filament.`,
   unload:`Unload ${T}${at}?\n\nThe printer heats ${T} and pulls the filament back. Lane ${lane} releases its spool when it's done.`,
@@ -150,11 +169,41 @@ function spoolmanCell(l){
  if(!status||!status.spoolman)return '';
  const tag=l.state&&l.state!='empty'&&l.state!='unknown';
  const btn=label=>tag&&l.spool_key?` <button class="sec sm" onclick="openSpool(${l.lane})">${label}</button>`:'';
- if(l.spoolman_id)return `<br><span class="ok">Spoolman #${l.spoolman_id}</span> ${esc(l.spoolman_name)}`+
-  (l.spoolman_remaining_g!=null?` · ${l.spoolman_remaining_g} g left`:'')+btn('Spoolman…');
- if(l.spoolman_error)return `<br><span class="warn">${esc(l.spoolman_error)}</span>`+btn('Link / create…');
+ // Tagless lane (bypass feed): assign a Spoolman spool by its location instead of a tag
+ const asg=!tag&&l.state=='empty'?` <button class="sec sm" onclick="openAssign(${l.lane})">${l.spoolman_id?'Change…':'Assign spool…'}</button>`:'';
+ if(l.spoolman_id)return `<br><span class="ok">Spoolman #${l.spoolman_id}</span> ${swatch(l.spoolman_color)}${esc(l.spoolman_name)}`+
+  (l.spoolman_remaining_g!=null?` · ${l.spoolman_remaining_g} g left`:'')+btn('Spoolman…')+asg;
+ if(l.spoolman_error)return `<br><span class="warn">${esc(l.spoolman_error)}</span>`+btn('Link / create…')+asg;
  if(l.spoolman_pending&&tag)return '<br><span class="muted">Spoolman: syncing…</span>';
- return '';
+ return asg?'<br>'+asg.trim():'';
+}
+// Assign a Spoolman spool to a tagless lane: sets the spool's location to the lane's
+let asgSpools=[];
+async function openAssign(lane){
+ const l=status.lanes.find(x=>x.lane==lane),box=$('asgDlg');
+ box.innerHTML='<div class="card" style="max-width:520px" onclick="event.stopPropagation()"><p class="muted">Loading spools from Spoolman…</p></div>';box.hidden=false;
+ try{asgSpools=(await smGet('/api/v1/spool?allow_archived=false')).sort((a,b)=>b.id-a.id)}
+ catch(e){box.innerHTML=`<div class="card" style="max-width:520px" onclick="event.stopPropagation()"><p class="bad">Couldn't load from Spoolman: ${esc(e.message)}</p><button class="sec sm" onclick="closeAssign()">Close</button></div>`;return}
+ box.innerHTML=`<div class="card" style="max-width:520px" onclick="event.stopPropagation()"><div class="row" style="justify-content:space-between"><h2 style="margin:0">Assign spool · lane ${lane}</h2><button class="sec sm" onclick="closeAssign()">Cancel</button></div>
+ <p class="hint">No tag needed. The spool's Spoolman location becomes the lane's; any other spool there moves to the away location.</p>
+ <input id="asgFind" placeholder="Search vendor, name, material, #id" oninput="drawAssign(${lane})" style="width:100%">
+ <div id="asgList" style="max-height:50vh;overflow:auto;margin-top:8px"></div>
+ ${l.spoolman_id?`<div class="row" style="margin-top:8px"><button class="sec sm" onclick="assignSpool(${lane},0)">Unassign #${l.spoolman_id}</button></div>`:''}
+ <div class="row" style="margin-top:8px"><span id="asgMsg"></span></div></div>`;
+ drawAssign(lane);
+}
+function drawAssign(lane){
+ const q=($('asgFind').value||'').toLowerCase();
+ const hits=asgSpools.filter(s=>!q||(spLabel(s)+' '+(s.location||'')).toLowerCase().includes(q)).slice(0,60);
+ $('asgList').innerHTML=hits.map(s=>`<button class="sec sm" style="display:block;width:100%;text-align:left;margin:2px 0" onclick="assignSpool(${lane},${s.id})">${swatch(s.filament&&s.filament.color_hex?'#'+s.filament.color_hex:'')}${esc(spLabel(s))}${s.remaining_weight!=null?' · '+g(s.remaining_weight)+' g':''}${s.location?' · <span class="muted">'+esc(s.location)+'</span>':''}</button>`).join('')||'<p class="muted">No spools match.</p>';
+}
+function closeAssign(){$('asgDlg').hidden=true;$('asgDlg').innerHTML=''}
+async function assignSpool(lane,id){
+ document.querySelectorAll('#asgDlg button').forEach(b=>b.disabled=true);
+ $('asgMsg').className='muted';$('asgMsg').textContent=id?`Assigning #${id}…`:'Unassigning…';
+ try{await post(`/api/lane/assign?lane=${lane}`,{spool_id:id});closeAssign();showToast(id?`Lane ${lane}: spool #${id} assigned`:`Lane ${lane}: spool unassigned`)}
+ catch(e){$('asgMsg').className='bad';$('asgMsg').textContent=e.message;document.querySelectorAll('#asgDlg button').forEach(b=>b.disabled=false);return}
+ refresh();
 }
 async function clearLane(lane){
  if(!confirm(`Release the spool held in lane ${lane}? Its Spoolman location is cleared too.`))return;

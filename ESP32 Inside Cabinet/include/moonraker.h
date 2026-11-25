@@ -21,6 +21,7 @@ bool toolMismatch(int tool);
 // False when the printer can't take a command now; why says what's going on
 bool printerBusy(String &why);
 // Lane buttons: "load" / "unload" send the configured command for the tool
-// the lane feeds; "mark_loaded" / "mark_unloaded" only correct the state
-bool laneToolAction(int lane, const String &action, String &msg);
+// the lane feeds; "mark_loaded" / "mark_unloaded" only correct the state.
+// "load" needs pickedMaterial (PLA, PETG, TPU, ABS or ASA); others ignore it.
+bool laneToolAction(int lane, const String &action, const String &pickedMaterial, String &msg);
 void moonrakerStatusJson(JsonObject out);

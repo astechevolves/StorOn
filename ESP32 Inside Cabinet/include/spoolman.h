@@ -25,6 +25,11 @@ void spoolSyncJson(int lane, JsonObject out);
 // refused unless move is set: then the tag moves to spoolId and the old spool
 // loses it, leaves the lane location, and is archived if archiveOld.
 bool spoolSyncLink(int lane, int spoolId, bool move, bool archiveOld, String &err);
+// Tagless lanes (bypass feeds): assign a Spoolman spool by setting its
+// location to "<prefix> Lane N"; any other spool there moves to the away
+// location. spoolId 0 = unassign. A tagless lane always shows the spool at
+// its location, so assigning in Spoolman directly works too.
+bool spoolAssignLane(int lane, int spoolId, String &err);
 // Re-read every lane's spool from Spoolman (after an edit made elsewhere)
 void spoolSyncRefreshAll();
 // Lanes with a spool re-read their remaining weight every 60 s (one HTTP call

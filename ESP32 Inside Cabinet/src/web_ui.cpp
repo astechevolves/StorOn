@@ -279,15 +279,36 @@ void setupWeb()
   });
 
   // Lane tool buttons: ?lane=N&action=load|unload|mark_loaded|mark_unloaded
+  // load also needs &material=PLA|PETG|TPU|ABS|ASA (picked on the page)
   server.on("/api/lane/tool", HTTP_POST, []() {
     if (!authOk())
       return;
     String msg;
-    bool ok = laneToolAction(server.arg("lane").toInt() - 1, server.arg("action"), msg);
+    bool ok = laneToolAction(server.arg("lane").toInt() - 1, server.arg("action"), server.arg("material"), msg);
     JsonDocument doc;
     doc["ok"] = ok;
     doc[ok ? "message" : "error"] = msg;
     sendJson(ok ? 200 : 400, doc);
+  });
+
+  // Tagless lane: assign a Spoolman spool by location. JSON body {"spool_id": N}, 0 = unassign
+  server.on("/api/lane/assign", HTTP_POST, []() {
+    if (!authOk())
+      return;
+    JsonDocument body;
+    int spoolId = deserializeJson(body, server.arg("plain")) ? -1 : (body["spool_id"] | -1);
+    if (spoolId < 0)
+    {
+      sendError(400, "Pick a Spoolman spool");
+      return;
+    }
+    String err;
+    if (!spoolAssignLane(server.arg("lane").toInt() - 1, spoolId, err))
+    {
+      sendError(400, err);
+      return;
+    }
+    server.send(200, "application/json", "{\"ok\":true}");
   });
 
   server.on("/api/lane/clear", HTTP_POST, []() {

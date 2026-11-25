@@ -436,7 +436,11 @@ static String fillTemplate(const char *tpl, int lane, int tool, int temp, const 
   return out;
 }
 
-bool laneToolAction(int lane, const String &action, String &msg)
+// Materials the Load picker offers. Matches LOAD_FILAMENT's own prompt on the
+// printer, which has a load temp for each.
+static const char *const LOAD_MATERIALS[] = {"PLA", "PETG", "TPU", "ABS", "ASA"};
+
+bool laneToolAction(int lane, const String &action, const String &pickedMaterial, String &msg)
 {
   if (lane < 0 || lane >= MAX_LANES || !laneActive(lane))
   {
@@ -465,8 +469,31 @@ bool laneToolAction(int lane, const String &action, String &msg)
       return false;
     }
     String material;
-    int temp = laneNozzleTemp(lane, material);
+    int temp;
+    if (action == "load")
+    {
+      // A load always starts from an unloaded tool, so the lane can't know
+      // what is going in: the user picks the material on the page. TEMP is
+      // left out so LOAD_FILAMENT sets the temp from the material.
+      material = pickedMaterial;
+      material.toUpperCase();
+      bool known = false;
+      for (const char *m : LOAD_MATERIALS)
+        known = known || material == m;
+      if (!known)
+      {
+        msg = "Pick a material to load";
+        return false;
+      }
+      temp = 0;
+    }
+    else
+      temp = laneNozzleTemp(lane, material);
     script = fillTemplate(tpl, lane, tool, temp, material);
+    // Older load commands may not have {material}: add it so the printer
+    // doesn't stop and ask for it again.
+    if (action == "load" && strstr(tpl, "{material}") == nullptr)
+      script += " MATERIAL=" + material;
   }
   else if (action == "mark_loaded" || action == "mark_unloaded")
     script = String("STORON_TOOL_EVENT EVENT=") + (action == "mark_loaded" ? "loaded" : "unloaded") +

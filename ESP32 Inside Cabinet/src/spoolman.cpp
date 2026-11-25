@@ -252,10 +252,15 @@ struct SpoolMatch
   float initial = -1;
 };
 
-// Find the (non-archived) spool whose "tag" extra field equals key. Spoolman
-// can't filter on extra fields, so list spools and keep only what we need.
-static bool findSpoolByTag(const char *key, SpoolMatch &m, String &err)
+// Find the (non-archived) spool whose "tag" extra field equals key, or, with
+// no key, whose location equals location (tagless lanes). Spoolman can't
+// filter on extra fields, so list spools and keep only what we need.
+// matches counts location hits (more than one = ambiguous); skipId is left
+// out of the search (used to find *other* spools at a location).
+static bool findSpool(const char *key, const String &location, SpoolMatch &m, int &matches,
+                      String &err, int skipId = 0)
 {
+  matches = 0;
   HTTPClient http;
   http.setTimeout(8000);
   http.begin(String(cfg.spoolmanUrl) + "/api/v1/spool");
@@ -294,10 +299,16 @@ static bool findSpoolByTag(const char *key, SpoolMatch &m, String &err)
     err = String("Couldn't parse Spoolman's spool list: ") + e.c_str();
     return false;
   }
+  const bool byTag = key && key[0];
   for (JsonObjectConst s : doc.as<JsonArrayConst>())
   {
-    if (!extraString(s["extra"]["tag"]).equalsIgnoreCase(key))
+    if (byTag ? !extraString(s["extra"]["tag"]).equalsIgnoreCase(key)
+              : location != (s["location"] | ""))
       continue;
+    if ((s["id"] | 0) == skipId)
+      continue;
+    if (matches++ > 0)
+      continue; // only counted: the first match is the one returned
     m.id = s["id"] | 0;
     m.location = s["location"] | "";
     m.remaining = s["remaining_weight"] | -1.0f;
@@ -317,9 +328,16 @@ static bool findSpoolByTag(const char *key, SpoolMatch &m, String &err)
     m.name.trim();
     if (fil["material"].is<const char *>())
       m.name += String(" (") + fil["material"].as<const char *>() + ")";
-    return true;
+    if (byTag)
+      return true; // one tag, one spool
   }
-  return true; // listed fine, no match (m.id == 0)
+  return true; // listed fine; m.id == 0 when nothing matched
+}
+
+static bool findSpoolByTag(const char *key, SpoolMatch &m, String &err)
+{
+  int matches = 0;
+  return findSpool(key, String(), m, matches, err);
 }
 
 // A spool left the lane: move it to the configured away location (e.g.
@@ -336,6 +354,62 @@ static bool releaseSpool(int lane, int id, String &err)
   return setLocation(id, cfg.spoolmanAwayLocation, err);
 }
 
+static void applyMatch(LaneSync &s, const SpoolMatch &m, unsigned long now)
+{
+  s.spoolId = m.id;
+  s.name = m.name;
+  s.remaining = m.remaining;
+  s.temp = m.temp;
+  s.bed = m.bed;
+  s.color = m.color;
+  s.material = m.material;
+  s.vendor = m.vendor;
+  s.filName = m.filName;
+  s.filamentId = m.filamentId;
+  s.initial = m.initial;
+  s.orcaId = m.orcaId;
+  s.error = "";
+  s.weightAt = now + WEIGHT_REFRESH_MS; // just read
+  s.weightFailed = false;
+}
+
+// A lane with no tag (e.g. fed through a bypass): its spool is whichever
+// Spoolman spool has this lane's location. Set by assigning a spool on the
+// page (spoolAssignLane) or by editing the location in Spoolman. Never
+// released automatically - the location is the user's assignment.
+static void syncTaglessLane(int i, unsigned long now)
+{
+  LaneSync &s = syncs[i];
+  String err;
+  SpoolMatch m;
+  int matches = 0;
+  if (!findSpool(nullptr, laneLocation(i), m, matches, err))
+  {
+    s.error = err;
+    s.retryAt = now + SYNC_RETRY_MS;
+    return;
+  }
+  const int before = s.spoolId;
+  if (matches != 1)
+  {
+    s = LaneSync();
+    if (matches > 1)
+      s.error = String(matches) + " Spoolman spools are at \"" + laneLocation(i) + "\"; keep one";
+    else if (before > 0)
+      logEvent("Lane %d: no Spoolman spool at \"%s\" any more", i + 1, laneLocation(i).c_str());
+  }
+  else
+  {
+    applyMatch(s, m, now);
+    if (m.id != before)
+      logEvent("Lane %d: Spoolman spool #%d %s (assigned by location)", i + 1, m.id, m.name.c_str());
+  }
+  s.weightAt = now + WEIGHT_REFRESH_MS; // next location re-check
+  s.pending = false;
+  s.force = false;
+  publishTagState(i);
+}
+
 static void syncLane(int i, unsigned long now)
 {
   LaneSync &s = syncs[i];
@@ -344,18 +418,28 @@ static void syncLane(int i, unsigned long now)
 
   if (!laneActive(i) || !laneKnown(i) || !uid[0])
   {
-    // Lane emptied (or disabled): release the spool that was there
-    if (s.spoolId > 0 && !releaseSpool(i, s.spoolId, err))
+    // A tagged spool left the lane (or the lane was disabled): release it.
+    // s.key is only set for tag-matched spools, so a location-assigned
+    // spool is never moved away by this.
+    if (s.key[0] && s.spoolId > 0 && !releaseSpool(i, s.spoolId, err))
     {
       s.error = err;
       s.retryAt = now + SYNC_RETRY_MS;
       return;
     }
-    if (s.spoolId > 0)
+    if (s.key[0] && s.spoolId > 0)
       logEvent("Lane %d: Spoolman spool #%d left the lane%s%s", i + 1, s.spoolId,
                cfg.spoolmanAwayLocation[0] ? ", now at " : "", cfg.spoolmanAwayLocation);
-    s = LaneSync();
-    publishTagState(i);
+    if (s.key[0] || !laneActive(i) || !laneKnown(i) || !cfg.spoolmanLocation[0])
+    {
+      s = LaneSync();
+      if (!laneActive(i) || !laneKnown(i) || !cfg.spoolmanLocation[0])
+      {
+        publishTagState(i);
+        return;
+      }
+    }
+    syncTaglessLane(i, now);
     return;
   }
 
@@ -401,21 +485,7 @@ static void syncLane(int i, unsigned long now)
     s.key[0] = '\0';
     return;
   }
-  s.spoolId = m.id;
-  s.name = m.name;
-  s.remaining = m.remaining;
-  s.temp = m.temp;
-  s.bed = m.bed;
-  s.color = m.color;
-  s.material = m.material;
-  s.vendor = m.vendor;
-  s.filName = m.filName;
-  s.filamentId = m.filamentId;
-  s.initial = m.initial;
-  s.orcaId = m.orcaId;
-  s.error = "";
-  s.weightAt = now + WEIGHT_REFRESH_MS; // just read
-  s.weightFailed = false;
+  applyMatch(s, m, now);
   logEvent("Lane %d: Spoolman spool #%d %s", i + 1, m.id, m.name.c_str());
   publishTagState(i);
 }
@@ -517,8 +587,18 @@ void updateSpoolSync(unsigned long now)
   for (int n = 0; n < MAX_LANES; n++)
   {
     int i = (nextWeight + n) % MAX_LANES;
-    if (laneActive(i) && syncs[i].spoolId > 0 && !syncs[i].pending &&
-        (long)(now - syncs[i].weightAt) >= 0)
+    if (!laneActive(i) || syncs[i].pending || (long)(now - syncs[i].weightAt) < 0)
+      continue;
+    bool tagless = laneKnown(i) && !laneReported(i)[0] && cfg.spoolmanLocation[0];
+    if (tagless)
+    {
+      // Re-read the location too (one spool list call), so a spool assigned
+      // or moved in Spoolman shows up here within a minute
+      nextWeight = (i + 1) % MAX_LANES;
+      syncTaglessLane(i, now);
+      return;
+    }
+    if (syncs[i].spoolId > 0)
     {
       nextWeight = (i + 1) % MAX_LANES;
       refreshWeight(i, now);
@@ -536,6 +616,8 @@ void spoolSyncJson(int lane, JsonObject out)
   {
     out["spoolman_id"] = s.spoolId;
     out["spoolman_name"] = s.name;
+    if (s.color.length() == 6)
+      out["spoolman_color"] = "#" + s.color;
     if (s.remaining >= 0)
       out["spoolman_remaining_g"] = (int)(s.remaining + 0.5f);
     if (cfg.spoolmanLocation[0])
@@ -600,7 +682,8 @@ static bool detachOld(int lane, int id, bool archive, String &err)
 int laneNozzleTemp(int lane, String &material)
 {
   material = "";
-  if (lane < 0 || lane >= MAX_LANES || !laneActive(lane) || !laneReported(lane)[0])
+  if (lane < 0 || lane >= MAX_LANES || !laneActive(lane) ||
+      (!laneReported(lane)[0] && syncs[lane].spoolId <= 0)) // tagless lanes need an assigned spool
     return 0;
   const LaneSync &s = syncs[lane];
   material = s.material;
@@ -625,7 +708,8 @@ int laneNozzleTemp(int lane, String &material)
 
 void laneFilamentJson(int lane, JsonObject out)
 {
-  if (lane < 0 || lane >= MAX_LANES || !laneActive(lane) || !laneReported(lane)[0])
+  if (lane < 0 || lane >= MAX_LANES || !laneActive(lane) ||
+      (!laneReported(lane)[0] && syncs[lane].spoolId <= 0)) // tagless lanes need an assigned spool
     return;
   const LaneSync &s = syncs[lane];
   String material, type, color, vendor, name;
@@ -728,6 +812,50 @@ bool spoolSyncLink(int lane, int spoolId, bool move, bool archiveOld, String &er
     logEvent("Lane %d: linked tag %s to Spoolman spool #%d", lane + 1, key, spoolId);
   spoolSyncRefreshAll();
   return ok;
+}
+
+bool spoolAssignLane(int lane, int spoolId, String &err)
+{
+  if (!cfg.spoolmanUrl[0] || !cfg.spoolmanLocation[0])
+  {
+    err = "Set the Spoolman URL and location in Settings first";
+    return false;
+  }
+  if (lane < 0 || lane >= MAX_LANES || !laneActive(lane))
+  {
+    err = "Lane is disabled";
+    return false;
+  }
+  if (laneReported(lane)[0])
+  {
+    err = "This lane has a tag; link the tag to a spool instead";
+    return false;
+  }
+  const String loc = laneLocation(lane);
+  // One spool per lane: move any other spool at this location away.
+  // shortcut: bounded to 5 so a misbehaving Spoolman can't loop forever -
+  // more than 5 stale spools at one location needs a second assign.
+  for (int k = 0; k < 5; k++)
+  {
+    SpoolMatch other;
+    int matches = 0;
+    if (!findSpool(nullptr, loc, other, matches, err, spoolId))
+      return false;
+    if (!other.id)
+      break;
+    if (!setLocation(other.id, cfg.spoolmanAwayLocation, err))
+      return false;
+    logEvent("Lane %d: Spoolman spool #%d moved out of \"%s\"", lane + 1, other.id, loc.c_str());
+  }
+  if (spoolId > 0)
+  {
+    if (!setLocation(spoolId, loc, err))
+      return false;
+    logEvent("Lane %d: assigned Spoolman spool #%d (no tag)", lane + 1, spoolId);
+  }
+  syncs[lane].force = true;
+  spoolSyncLaneChanged(lane);
+  return true;
 }
 
 // ── Create from tag ───────────────────────────────────────

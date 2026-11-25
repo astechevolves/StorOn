@@ -17,6 +17,8 @@
 #define PROBE_RETRY_MS 10000 // retry a missing reader this often (e.g. its supply came up late)
 #define DECODE_TRIES 10      // decode attempts per new tag (a passing tag can leave mid-read)
 #define INFO_LEN 768         // decoded spool data, serialized JSON
+#define REINIT_QUIET_POLLS 40 // a reader holding a spool that reads nothing for this many polls
+                              // in a row is soft-reset, in case the chip is wedged
 
 struct Lane
 {
@@ -27,6 +29,7 @@ struct Lane
   bool known = false;
   char reported[UID_LEN] = "";
   int missCount = 0;
+  int quietPolls = 0; // polls in a row with no tag read while a spool is held
   // Diagnostics
   char lastUid[UID_LEN] = "";
   byte lastSak = 0;
@@ -180,16 +183,19 @@ static const char *typeName(byte sak)
 static void probeReader(int i, bool quiet)
 {
   Lane &lane = lanes[i];
+  bool wasPresent = lane.present;
   lane.lastProbe = millis();
   lane.reader.PCD_Init(cfg.ssPins[i], MFRC522::UNUSED_PIN); // RST tied high: soft reset
   lane.version = lane.reader.PCD_ReadRegister(MFRC522::VersionReg);
   // 0x00 / 0xFF means nothing answered: check wiring and power
   lane.present = lane.version != 0x00 && lane.version != 0xFF;
   // Max receive gain (48 dB, default 33 dB): helps small spool tags, and the
-  // readers run at 3.0 V, which weakens the field a little
+  // readers' 3.3 V supply runs over CAT5 and can sag, which weakens the field
   lane.reader.PCD_SetAntennaGain(MFRC522::RxGain_max);
   lane.reader.PCD_AntennaOff(); // PCD_Init leaves the antenna on
-  if (!quiet || lane.present)
+  // Quiet probes (missing-reader retries, wedge-insurance resets) log only
+  // when a reader shows up or drops out
+  if (!quiet || lane.present != wasPresent)
     logEvent("Lane %d reader (SS GPIO %d): %s (version 0x%02X)", i + 1, cfg.ssPins[i],
              lane.present ? "found" : "NOT FOUND, will keep retrying", lane.version);
 }
@@ -225,13 +231,16 @@ static bool selectTag(MFRC522 &r)
   for (int attempt = 0; attempt < 2; attempt++)
     if (r.PICC_IsNewCardPresent() && r.PICC_ReadCardSerial())
       return true;
+  r.PCD_StopCrypto1(); // a stuck MFCrypto1On bit garbles every later command
   r.PCD_AntennaOff();
   return false;
 }
 
 static void finishTag(MFRC522 &r)
 {
+  r.PCD_StopCrypto1();
   r.PICC_HaltA();
+  r.PCD_StopCrypto1();
   r.PCD_AntennaOff();
 }
 
@@ -374,6 +383,15 @@ void updateRfid(unsigned long now)
     if (!lane.infoDone)
       decodeTag(i, uid); // while the tag is selected
     finishTag(lane.reader);
+    lane.quietPolls = 0;
+  }
+  else if (lane.reported[0] && ++lane.quietPolls >= REINIT_QUIET_POLLS)
+  {
+    // Holding a spool but hearing nothing for a long while: the tag may just
+    // be in a blind spot, or the reader chip may be wedged. A soft reset is
+    // cheap insurance.
+    lane.quietPolls = 0;
+    probeReader(i, true);
   }
   updateLane(i, found, uid, now);
 }
@@ -530,10 +548,15 @@ static bool laneTagReady(int i, JsonDocument &out)
     out["error"] = "Reader not found; check wiring and power";
     return false;
   }
+  // No tag: reset the reader once and retry, in case the chip is wedged
   if (!selectTag(lanes[i].reader))
   {
-    out["error"] = "No tag in range";
-    return false;
+    probeReader(i, true);
+    if (!lanes[i].present || !selectTag(lanes[i].reader))
+    {
+      out["error"] = "No tag in range";
+      return false;
+    }
   }
   return true;
 }
