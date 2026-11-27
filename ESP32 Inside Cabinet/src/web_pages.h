@@ -617,17 +617,17 @@ static const char SETTINGS_HTML[] PROGMEM = PAGE_HEAD("StorOn Settings") PAGE_HE
 <label><span>Spoolman URL</span><input name="spoolman_url" maxlength="95" placeholder="http://192.168.1.10:7912">
 <div class="hint">Optional. With it, each lane finds its spool in Spoolman (by the spool's "tag" field) and the tag writer can pre-fill from a spool.</div></label>
 <label><span>Location prefix</span><input name="spoolman_location" maxlength="31" placeholder="StorOn">
-<div class="hint">A spool in lane 3 gets the Spoolman location "&lt;prefix&gt; Lane 3". Leave empty to not touch locations.</div></label>
+<div class="hint">A spool in lane 3 gets the Spoolman location "&lt;prefix&gt; Lane 3". Leave empty to not touch locations (lanes without a tag need it to assign a spool).</div></label>
 <label><span>Location after leaving a lane</span><input name="spoolman_away_location" maxlength="31" placeholder="StorOn Shelves">
-<div class="hint">Where a spool goes when it's unloaded, cleared or replaced in its lane. Empty clears the location. Only applied if the spool still shows its lane.</div></label>
+<div class="hint">Where a spool goes when it's unloaded, cleared or replaced in its lane. Empty clears the location. Only applied if the spool still shows its lane. A spool assigned to a lane without a tag only goes here when another spool is assigned to that lane.</div></label>
 </div>
 <div class="card"><h2>Printer (Moonraker)</h2>
 <label><span>Moonraker URL</span><input name="moonraker_url" maxlength="95" placeholder="http://192.168.1.20">
 <div class="hint">Optional. With storon.cfg on the printer, a tool's unload releases its lane's spool. Set which tool each lane feeds below.</div></label>
-<label><span>Load command</span><input name="load_command" maxlength="95" placeholder="LOAD_FILAMENT TOOL={tool} TEMP={temp}">
-<div class="hint">Optional: adds a Load button to each lane. {tool}, {lane}, {temp} and {material} are filled in; temp and material come from the lane's Spoolman filament or its tag, and a word whose value isn't known is left out. Buttons are disabled while the printer is printing or busy.</div></label>
+<label><span>Load command</span><input name="load_command" maxlength="95" placeholder="LOAD_FILAMENT TOOL={tool} MATERIAL={material}">
+<div class="hint">Optional: adds a Load button to each lane. {tool}, {lane} and {material} are filled in; the material is picked when you press Load (MATERIAL= is added if the command has no {material}). {temp} is left out, so the printer sets the temperature from the material. Buttons are disabled while the printer is printing or busy.</div></label>
 <label><span>Unload command</span><input name="unload_command" maxlength="95" placeholder="UNLOAD_FILAMENT TOOL={tool} TEMP={temp}">
-<div class="hint">Optional: adds an Unload button to each lane.</div></label>
+<div class="hint">Optional: adds an Unload button to each lane. {tool}, {lane}, {temp} and {material} are filled in from the lane's Spoolman filament or its tag; a word whose value isn't known is left out.</div></label>
 </div>
 <div class="card"><h2>RFID lanes</h2><p class="hint">One RC522 reader per lane. Disable lanes without a reader; lane numbers stay the same either way.</p>
 <div class="scroll"><table><thead><tr><th>Lane</th><th>Enabled</th><th>SS pin (board "SDA")</th><th>Feeds tool (T#, -1 = none)</th></tr></thead><tbody id="laneRows"></tbody></table></div>

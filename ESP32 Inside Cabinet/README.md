@@ -117,7 +117,9 @@ To pre-fill WiFi and MQTT at build time, copy `include/config.example.h` to `inc
   - **Read tag:** dumps the tag (UID, type, SAK, readable memory).
   - **Write tag:** writes an OpenTag3D sticker. It can pre-fill from a Spoolman spool and save the tag ID back to it.
   - **Spoolman:** links the lane's tag to an existing spool, or creates a new spool from the tag data. A new roll on a reusable spool can take over the tag, and the old spool can be archived.
-  - **Load / Unload:** sends the configured G-code for the lane's tool.
+  - **Assign spool… / Change…** (lanes with no tag, e.g. a bypass feed): pick a Spoolman spool for the lane, or unassign it. See [Lanes without a tag](#lanes-without-a-tag).
+  - **Load:** asks which material is going in (PLA, PETG, TPU, ABS or ASA), then sends the configured load G-code for the lane's tool.
+  - **Unload:** sends the configured unload G-code for the lane's tool.
   - **Mark loaded / Mark unloaded:** only corrects the recorded state. Nothing moves.
   - **Clear:** forgets the lane's current tag.
 
@@ -160,13 +162,25 @@ With a Spoolman URL set, the ESP32 syncs on its own. Home Assistant isn't needed
 - **Tag already used by another spool:** refused unless you choose to move it. Moving takes the tag off the old spool, and the old spool can be archived.
 - **Remaining weight:** each lane's spool is re-read from Spoolman every 60 s, and again right after a print ends or its tool is loaded or unloaded. Moonraker deducts filament from the active spool as it prints, so the weight in the web UI and in `lane_data` stays current without rescanning. Changes under 1 g are ignored. If Spoolman can't be reached, the last weight is kept. If the spool was deleted, the tag is matched again as if rescanned: the lane picks up whichever spool has the tag now, or shows "Not linked" if none does.
 
+### Lanes without a tag
+
+A lane fed without a tagged spool (for example through a bypass) can still have a Spoolman spool. It needs the Spoolman location to be set in Settings.
+
+- The lane's spool is whichever Spoolman spool has the location `<location> Lane N`. Set it with **Assign spool…** on the Status page, or by editing the spool's location in Spoolman. The location is re-checked every 60 s, so a change made in Spoolman shows up within a minute.
+- Assigning from the page moves any other spool at that location to the "away" location. **Unassign** clears it.
+- If more than one spool has the lane's location, the lane shows an error until only one is left.
+- The spool is never released automatically, not even when its tool is unloaded. The location is your assignment.
+- The assigned spool is used like a tagged one: its temperature and material fill the Unload command, and it's shared with the slicer through `lane_data`.
+
 ## Printer link (Moonraker)
 
 Optional. It needs the `_STORON` macros from [Klipper Macros](../Klipper%20Macros/README.md) on the printer.
 
 - **Tool state:** polls `_STORON` once a second while the printer is active, every 5 s when it's idle and every 10 s while it can't be reached. When a tool goes unloaded, the spool in the lane feeding it is released. Only changes count, so a Klipper restart never releases a lane.
 - **Mismatch warning:** if a tool's recorded state and its filament sensor disagree for 30 s while the printer is idle (filament pulled by hand, a failed load), the lane shows a warning.
-- **Load / Unload buttons:** send your configured G-code. Placeholders: `{tool} {lane} {temp} {material}`. Temp and material come from Spoolman, else from the tag. Commands are refused while the printer is busy.
+- **Load / Unload buttons:** send your configured G-code. Placeholders: `{tool} {lane} {temp} {material}`. A word whose value isn't known is left out. Commands are refused while the printer is busy.
+  - **Load:** the tool is empty, so the lane can't know what's going in. You pick the material on the page and it fills `{material}`. If the command has no `{material}`, ` MATERIAL=<picked>` is added to the end. `{temp}` is left out, so `LOAD_FILAMENT` sets the temperature from the material.
+  - **Unload:** temp and material come from Spoolman, else from the tag.
 - **Slicer sync (`lane_data`):** each tool's spool (color, material, vendor, Spoolman IDs, temperatures, weights) is written to Moonraker's `lane_data` database as `T<n>`, in the RFC 0001 lane format that HelixScreen documents. OrcaSlicer (through the [Orca Spoolman Presets](https://github.com/DIEHARDave/orca_spoolman_presets) plugin) and HelixScreen read it. Records claimed by another writer (AFC, Happy Hare, ...) are never overwritten.
 
 ## Home Assistant (MQTT)
@@ -198,7 +212,8 @@ All responses are JSON. If a password is set, the same `admin` login applies. La
 | POST | `/api/lane/write?lane=N` | Write OpenTag3D. Body `{fields:{...}, spoolman_id?}` |
 | POST | `/api/lane/link?lane=N` | Link the lane's tag to a spool. Body `{spool_id, move?, archive_old?}` |
 | POST | `/api/lane/create?lane=N[&dry_run=1]` | Create a Spoolman spool for the lane's tag |
-| POST | `/api/lane/tool?lane=N&action=...` | `load`, `unload`, `mark_loaded`, `mark_unloaded` |
+| POST | `/api/lane/assign?lane=N` | Assign a Spoolman spool to a lane with no tag. Body `{spool_id}`, `0` unassigns |
+| POST | `/api/lane/tool?lane=N&action=...` | `load`, `unload`, `mark_loaded`, `mark_unloaded`. `load` also needs `&material=PLA\|PETG\|TPU\|ABS\|ASA` |
 | POST | `/api/lane/clear?lane=N` | Forget the lane's tag |
 | GET | `/api/spoolman/spool?id=N` | Spool mapped to OpenTag3D fields |
 | ANY | `/api/spoolman/relay?path=...` | Passes requests through to Spoolman (used by the web UI) |
@@ -217,7 +232,7 @@ pio run -t upload --upload-port COM5   # if the port isn't found
 ```
 
 Releases are built by GitHub Actions (`.github/workflows/firmware-release.yml`) when a version tag is pushed:
-`git tag v0.4.0 && git push origin v0.4.0`.
+`git tag vX.Y.Z && git push origin vX.Y.Z`.
 
 The logo and icons live in `assets/`. After changing them, regenerate the header with `python assets/make_web_assets.py`.
 

@@ -43,8 +43,9 @@ RFID reading of spools using an ESP32 inside the cabinet is working on my build 
 - When a spool is placed in a lane, its tag is matched to a Spoolman spool and that spool's location is set to `StorOn Lane N`. When it's removed, the location is cleared (or set to a location you choose).
 - The [Klipper Macros](Klipper%20Macros/README.md) track each tool's loaded/unloaded state. Unloading a tool releases its lane's spool.
 - An unknown tag can be linked to an existing spool, or a new spool can be created from the tag data, from the lane's **Spoolman** button on the status page.
+- A lane with no tag (for example a bypass feed) can still have a spool: pick one with **Assign spool…** on the status page, or set the spool's location to `StorOn Lane N` in Spoolman.
 - Remaining weight comes from Spoolman. If Moonraker's Spoolman integration is set up, Moonraker deducts filament as you print, and the ESP32 re-reads each lane's spool so the weight shown stays current.
-- With a Moonraker URL set in the ESP32 settings, each tool's spool is also shared with OrcaSlicer and HelixScreen, and the web UI gets Load/Unload buttons per lane that can be set to custom macros in settings.
+- With a Moonraker URL set in the ESP32 settings, each tool's spool is also shared with OrcaSlicer and HelixScreen, and the web UI gets Load/Unload buttons per lane that can be set to custom macros in settings. Load asks which material is going in, so the printer heats to the right temperature.
 
 ### Electronics and software
 - [ESP32 Inside Cabinet](ESP32%20Inside%20Cabinet/README.md): humidity/temperature monitoring, fan, per-lane RFID spool tags (Bambu and OpenTag3D), Spoolman sync, and a web UI.

@@ -4,7 +4,7 @@
 
 // Release builds set this from the git tag (see .github/workflows)
 #ifndef FW_VERSION
-#define FW_VERSION "0.5.0"
+#define FW_VERSION "0.5.1"
 #endif
 
 // Implemented in main.cpp, used by the web UI
