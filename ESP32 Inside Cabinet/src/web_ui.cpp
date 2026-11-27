@@ -266,7 +266,7 @@ void setupWeb()
       server.sendHeader("Content-Encoding", "gzip");
     server.setContentLength(CONTENT_LENGTH_UNKNOWN);
     server.send(code, "application/json", "");
-    ChunkOut out;
+    static ChunkOut out; // 4 KB: too big for the 8 KB loop stack
     http.writeToStream(&out);
     out.flush();
     server.sendContent("");
@@ -395,7 +395,10 @@ void setupWeb()
         else if (!uploadAuthorized)
           return;
         else if (up.status == UPLOAD_FILE_WRITE)
+        {
           Update.write(up.buf, up.currentSize);
+          feedLoopWDT(); // the whole upload is one pass of loop()
+        }
         else if (up.status == UPLOAD_FILE_END)
           Update.end(true);
         else if (up.status == UPLOAD_FILE_ABORTED)

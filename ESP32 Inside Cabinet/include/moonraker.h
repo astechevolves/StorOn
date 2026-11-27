@@ -25,3 +25,4 @@ bool printerBusy(String &why);
 // "load" needs pickedMaterial (PLA, PETG, TPU, ABS or ASA); others ignore it.
 bool laneToolAction(int lane, const String &action, const String &pickedMaterial, String &msg);
 void moonrakerStatusJson(JsonObject out);
+String urlEncode(const String &s);

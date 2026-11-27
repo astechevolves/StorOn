@@ -12,6 +12,7 @@
 #include "spoolman.h"
 #include "moonraker.h"
 #include <driver/gpio.h>
+#include <esp_task_wdt.h>
 
 // Pins, network and timing come from the web UI (see settings.cpp for the
 // defaults). Fan wiring for the default setup (MOSFET module channel 1):
@@ -24,6 +25,8 @@
 #define WIFI_BOOT_WAIT_MS 20000 // how long to wait for WiFi before starting the setup hotspot
 #define WIFI_LOST_AP_MS 120000  // start the setup hotspot after WiFi has been down this long
 #define AP_STA_RETRY_MS 60000   // with the hotspot up, retry the saved WiFi this often
+#define AP_BUSY_RETRY_MS 300000 // ...or this often while someone is joined to the hotspot
+#define LOOP_WDT_S 120          // restart if loop() hangs; longer than the slowest web action
 #define MQTT_RETRY_MS 10000
 #define AP_PASSWORD "storonsetup" // setup hotspot password (WPA2 needs 8+ characters)
 #define BOOT_BUTTON_PIN 0         // hold 10 s for a factory reset
@@ -174,7 +177,68 @@ void publishDiscovery(const char *legacyId, const char *suffix, const char *sens
   doc["device_class"] = deviceClass;
   doc["state_class"] = "measurement";
   doc["unique_id"] = id;
+  doc["expire_after"] = cfg.sensorIntervalS * 3; // a sensor that stops reading goes "unavailable" in HA
   sendDiscovery(topic, doc);
+}
+
+static const char *resetReason()
+{
+  switch (esp_reset_reason())
+  {
+  case ESP_RST_POWERON:
+    return "power on";
+  case ESP_RST_SW:
+    return "restart (settings, update or reboot)";
+  case ESP_RST_PANIC:
+    return "crash";
+  case ESP_RST_INT_WDT:
+  case ESP_RST_TASK_WDT:
+  case ESP_RST_WDT:
+    return "watchdog (loop hung)";
+  case ESP_RST_BROWNOUT:
+    return "brownout (supply voltage dipped)";
+  default:
+    return "other";
+  }
+}
+
+// Diagnostic sensors: why the board last restarted, and health numbers to
+// trend in HA. discover also (re)sends their HA discovery.
+void publishDiag(bool discover)
+{
+  if (!mqtt.connected())
+    return;
+  struct
+  {
+    const char *key, *name, *unit, *deviceClass;
+    String value;
+  } sensors[] = {{"uptime", "Uptime", "s", "duration", String(millis() / 1000)},
+                 {"rssi", "WiFi Signal", "dBm", "signal_strength", String(WiFi.RSSI())},
+                 {"free_heap", "Free Memory", "B", "data_size", String(ESP.getFreeHeap())},
+                 {"reset_reason", "Last Restart Reason", nullptr, nullptr, resetReason()}};
+  for (auto &s : sensors)
+  {
+    char id[64], stateTopic[80], topic[128];
+    snprintf(id, sizeof(id), "%s_%s", cfg.deviceId, s.key);
+    snprintf(stateTopic, sizeof(stateTopic), "%s/diag/%s", cfg.deviceId, s.key);
+    if (discover)
+    {
+      snprintf(topic, sizeof(topic), "homeassistant/sensor/%s/config", id);
+      JsonDocument doc;
+      doc["name"] = s.name;
+      doc["unique_id"] = id;
+      doc["state_topic"] = stateTopic;
+      doc["entity_category"] = "diagnostic";
+      if (s.unit)
+      {
+        doc["unit_of_measurement"] = s.unit;
+        doc["device_class"] = s.deviceClass;
+        doc["state_class"] = "measurement";
+      }
+      sendDiscovery(topic, doc);
+    }
+    mqtt.publish(stateTopic, s.value.c_str(), true);
+  }
 }
 
 // Fan entity: on/off plus a 1-100% speed slider
@@ -257,6 +321,12 @@ void publishTagState(int lane)
   laneTagInfo(lane, o); // decoded spool data, when there is any
   spoolSyncJson(lane, o); // matching Spoolman spool, when configured
   o["tag_uid"] = uid;
+  if (measureJson(attrs) >= sizeof(payload))
+  {
+    o.clear(); // would be cut off mid-JSON: send without the tag's own data
+    spoolSyncJson(lane, o);
+    o["tag_uid"] = uid;
+  }
   serializeJson(attrs, payload, sizeof(payload));
   mqtt.publish(attrTopic, payload, true);
 
@@ -304,6 +374,7 @@ void registerSensors()
   publishRunTime();
   for (int i = 0; i < MAX_LANES; i++)
     publishTagState(i);
+  publishDiag(true);
   logEvent("HA discovery published");
 }
 
@@ -393,10 +464,16 @@ void stopSetupAp()
 // Log why a WiFi connection attempt failed (once per distinct reason, so a
 // retry loop doesn't flood the log). Common codes: 201 network not found,
 // 202/15/204 wrong password, 2/4/8 router dropped us.
+static volatile uint8_t wifiDropReason = 0; // set on the WiFi task; logged from loop(), since logEvent isn't thread-safe
 void onWifiDisconnected(WiFiEvent_t, WiFiEventInfo_t info)
 {
+  wifiDropReason = info.wifi_sta_disconnected.reason;
+}
+
+static void logWifiDrop()
+{
   static uint8_t lastReason = 0;
-  uint8_t reason = info.wifi_sta_disconnected.reason;
+  uint8_t reason = wifiDropReason;
   if (reason == lastReason)
     return;
   lastReason = reason;
@@ -432,6 +509,7 @@ void setupNetwork()
 
 void updateNetwork(unsigned long now)
 {
+  logWifiDrop();
   bool connected = WiFi.status() == WL_CONNECTED;
   if (connected)
   {
@@ -465,10 +543,11 @@ void updateNetwork(unsigned long now)
     }
     if (!apActive && wifiLostAt && now - wifiLostAt > WIFI_LOST_AP_MS)
       startSetupAp();
-    // Retry the saved network only while nobody is using the hotspot, since
-    // joining it moves the radio to the router's channel and drops clients
-    if (apActive && cfg.wifiSsid[0] && WiFi.softAPgetStationNum() == 0 &&
-        now - lastStaRetry > AP_STA_RETRY_MS)
+    // Retrying the saved network moves the radio to the router's channel and
+    // drops hotspot clients, so retry rarely while someone is joined. Never
+    // stop retrying: a phone that auto-joins the hotspot would keep us offline.
+    if (apActive && cfg.wifiSsid[0] &&
+        now - lastStaRetry > (WiFi.softAPgetStationNum() == 0 ? AP_STA_RETRY_MS : AP_BUSY_RETRY_MS))
     {
       lastStaRetry = now;
       logEvent("Retrying WiFi: %s", cfg.wifiSsid);
@@ -545,6 +624,7 @@ void readAndPublish()
 {
   readOne(dhtHigh, readingHigh, "High", topicHighTemp, topicHighHum);
   readOne(dhtLow, readingLow, "Low", topicLowTemp, topicLowHum);
+  publishDiag(false);
 }
 
 // ── Circulation fan ───────────────────────────────────────
@@ -690,6 +770,7 @@ void setup()
   loadSettings();
   buildTopics();
   logEvent("StorOn monitor %s, device \"%s\" (%s)", FW_VERSION, cfg.deviceName, cfg.deviceId);
+  logEvent("Last restart: %s", resetReason());
 
   prefs.begin("fan", false);
   fanSpeedPct = constrain(prefs.getInt("speed", FAN_SPEED_PCT), FAN_MIN_PCT, 100);
@@ -711,9 +792,14 @@ void setup()
   mqtt.setServer(cfg.mqttHost, cfg.mqttPort);
   mqtt.setBufferSize(1024);
   mqtt.setSocketTimeout(5);
+  mqtt.setKeepAlive(60); // default 15 s: a slow web action could get us dropped by the broker
   mqtt.setCallback(onMqttMessage);
   setupNetwork();
   setupWeb();
+  // The core's default is 5 s. Keep watching core 0's idle task, as the core does.
+  const esp_task_wdt_config_t wdt = {.timeout_ms = LOOP_WDT_S * 1000, .idle_core_mask = 1 << 0, .trigger_panic = true};
+  esp_task_wdt_reconfigure(&wdt);
+  enableLoopWDT();
 }
 
 void loop()
