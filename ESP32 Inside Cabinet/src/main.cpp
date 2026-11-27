@@ -796,7 +796,9 @@ void setup()
   mqtt.setCallback(onMqttMessage);
   setupNetwork();
   setupWeb();
-  esp_task_wdt_init(LOOP_WDT_S, true); // the core's default is 5 s
+  // The core's default is 5 s. Keep watching core 0's idle task, as the core does.
+  const esp_task_wdt_config_t wdt = {.timeout_ms = LOOP_WDT_S * 1000, .idle_core_mask = 1 << 0, .trigger_panic = true};
+  esp_task_wdt_reconfigure(&wdt);
   enableLoopWDT();
 }
 
