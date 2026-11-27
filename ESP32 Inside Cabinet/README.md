@@ -164,7 +164,7 @@ With a Spoolman URL set, the ESP32 syncs on its own. Home Assistant isn't needed
 
 Optional. It needs the `_STORON` macros from [Klipper Macros](../Klipper%20Macros/README.md) on the printer.
 
-- **Tool state:** polls `_STORON` once a second. When a tool goes unloaded, the spool in the lane feeding it is released. Only changes count, so a Klipper restart never releases a lane.
+- **Tool state:** polls `_STORON` once a second while the printer is active, every 5 s when it's idle and every 10 s while it can't be reached. When a tool goes unloaded, the spool in the lane feeding it is released. Only changes count, so a Klipper restart never releases a lane.
 - **Mismatch warning:** if a tool's recorded state and its filament sensor disagree for 30 s while the printer is idle (filament pulled by hand, a failed load), the lane shows a warning.
 - **Load / Unload buttons:** send your configured G-code. Placeholders: `{tool} {lane} {temp} {material}`. Temp and material come from Spoolman, else from the tag. Commands are refused while the printer is busy.
 - **Slicer sync (`lane_data`):** each tool's spool (color, material, vendor, Spoolman IDs, temperatures, weights) is written to Moonraker's `lane_data` database as `T<n>`, in the RFC 0001 lane format that HelixScreen documents. OrcaSlicer (through the [Orca Spoolman Presets](https://github.com/DIEHARDave/orca_spoolman_presets) plugin) and HelixScreen read it. Records claimed by another writer (AFC, Happy Hare, ...) are never overwritten.
@@ -181,6 +181,9 @@ Entities are created automatically by MQTT discovery. Topics are prefixed with t
 | `<id>/circulation_fan/state`, `/percentage`, `/run_minutes` (+ `/set`) | Fan state and control |
 | `<id>/lane_N/tag` | Lane tag UID in hex, or `empty` |
 | `<id>/lane_N/attributes` | Decoded spool data and the linked Spoolman spool |
+| `<id>/diag/uptime`, `/rssi`, `/free_heap`, `/reset_reason` | Diagnostics: seconds since boot, WiFi signal, free memory, why the board last restarted |
+
+The temperature and humidity sensors go "unavailable" in Home Assistant if no reading arrives for three sensor intervals, so a failed sensor doesn't keep showing its last value.
 
 ## JSON API
 

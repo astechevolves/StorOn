@@ -594,7 +594,7 @@ async function doEdit(){
 function dlgBusy(m){$('dlgMsg').className='muted';$('dlgMsg').textContent=m;document.querySelectorAll('#spoolDlg button').forEach(b=>b.disabled=true)}
 function dlgFail(e){$('dlgMsg').className='bad';$('dlgMsg').textContent=e.message;document.querySelectorAll('#spoolDlg button').forEach(b=>b.disabled=false)}
 function showToast(m){const t=$('toast');t.textContent=m;t.hidden=false;clearTimeout(t._h);t._h=setTimeout(()=>t.hidden=true,4000)}
-refresh();setInterval(()=>{if(!busy)refresh()},2000);
+refresh();setInterval(()=>{if(!busy&&!document.hidden)refresh()},2000);
 </script></body></html>)HTML";
 
 static const char SETTINGS_HTML[] PROGMEM = PAGE_HEAD("StorOn Settings") PAGE_HEADER("", "", " class=\"on\"") R"HTML(

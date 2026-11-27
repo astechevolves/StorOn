@@ -8,6 +8,10 @@
 #include <time.h>
 
 #define POLL_MS 1000
+#define IDLE_POLL_MS 5000   // nothing happening on the printer
+#define DOWN_POLL_MS 10000  // Moonraker unreachable
+#define ACTIVE_MS 60000     // stay on POLL_MS this long after any activity
+#define CONNECT_MS 1000     // HTTPClient's default is 5 s, which stalls the loop while the printer is off
 #define MAX_TOOLS 16
 
 static int states[MAX_TOOLS];
@@ -17,6 +21,7 @@ static long lastSeq = -1;
 static bool connected = false;
 static String lastError;
 static unsigned long lastPoll = 0;
+static unsigned long activeAt = 0; // last activity, see ACTIVE_MS
 static String printState, idleState, tcStatus; // print_stats, idle_timeout, toolchanger
 static String sensorPattern;                   // _STORON's sensor_pattern
 static int sensors[MAX_TOOLS];                 // tool's filament sensor: -1 unknown, 0, 1
@@ -44,6 +49,7 @@ int toolLoaded(int tool)
 
 static void toolChanged(int tool, int before, int after)
 {
+  activeAt = millis();
   spoolSyncWeightsSoon(tool); // the spool may have just been used
   for (int lane = 0; lane < MAX_LANES; lane++)
   {
@@ -64,9 +70,12 @@ static void toolChanged(int tool, int before, int after)
 
 void updateMoonraker(unsigned long now)
 {
-  if (!cfg.moonrakerUrl[0] || WiFi.status() != WL_CONNECTED || now - lastPoll < POLL_MS)
+  unsigned long every = !lastPoll || (connected && now - activeAt < ACTIVE_MS) ? POLL_MS
+                        : connected                                           ? IDLE_POLL_MS
+                                                                              : DOWN_POLL_MS;
+  if (!cfg.moonrakerUrl[0] || WiFi.status() != WL_CONNECTED || now - lastPoll < every)
     return;
-  lastPoll = now;
+  lastPoll = now | 1;
 
   // _STORON, print / busy state, toolchanger, and each tool's filament
   // sensor (names from _STORON's sensor_pattern; unknown objects are skipped)
@@ -81,6 +90,7 @@ void updateMoonraker(unsigned long now)
   for (int t = 0; t < toolCount; t++) // each tool's spool_id (absent when T<n> lacks it)
     q += "&gcode_macro%20T" + String(t) + "=spool_id";
   HTTPClient http;
+  http.setConnectTimeout(CONNECT_MS);
   http.setTimeout(2000);
   http.begin(String(cfg.moonrakerUrl) + q);
   int code = http.GET();
@@ -117,6 +127,7 @@ void updateMoonraker(unsigned long now)
   if (!wasConnected)
   {
     logEvent("Printer link up (%s)", cfg.moonrakerUrl);
+    activeAt = now;
     for (String &s : laneDataSent)
       s = ""; // write everything again
     for (long &s : laneSpoolSent)
@@ -155,6 +166,8 @@ void updateMoonraker(unsigned long now)
 
   String why;
   bool busy = printerBusy(why);
+  if (busy)
+    activeAt = now;
   for (int t = 0; t < n; t++)
   {
     String name = sensorPattern;
@@ -287,6 +300,7 @@ static void syncLaneData(unsigned long now)
       return;
     }
     laneDataSent[tool] = wantStr;
+    activeAt = now;
     String mat = val["material"] | "";
     logEvent("Lane %d: %s lane data %s = %s %s", lane + 1, verify ? "restored" : "slicer", key.c_str(),
              mat.length() ? mat.c_str() : "(empty)", String(val["color"] | "").c_str());
@@ -319,7 +333,7 @@ bool toolMismatch(int tool)
   return toolSensor(tool) >= 0 && mismatchSince[tool] && millis() - mismatchSince[tool] >= MISMATCH_MS;
 }
 
-static String urlEncode(const String &s)
+String urlEncode(const String &s)
 {
   String out;
   char hex[4];
@@ -400,6 +414,7 @@ static void syncToolSpools(unsigned long now)
       return;
     }
     spoolRetryAt = 0;
+    activeAt = now;
     laneSpoolSent[tool] = spool;
     toolSpool[tool] = spool; // until the next poll reads it back
     logEvent("Lane %d: T%d spool = %s", lane + 1, tool, spool > 0 ? String(spool).c_str() : "none");
@@ -509,6 +524,7 @@ bool laneToolAction(int lane, const String &action, const String &pickedMaterial
     logEvent("Lane %d: %s failed: %s", lane + 1, script.c_str(), msg.c_str());
     return false;
   }
+  activeAt = millis(); // follow the load / unload closely
   logEvent("Lane %d: sent %s", lane + 1, script.c_str());
   msg = (finished ? "Done: " : "Started on the printer: ") + script;
   return true;

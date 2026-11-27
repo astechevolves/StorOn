@@ -257,7 +257,7 @@ static bool findPayload(const byte *mem, int memLen, const byte **payload, int *
       int idLen = il ? mem[i++] : 0;
       const byte *type = mem + i;
       i += typeLen + idLen;
-      if (i + (int)plen > end)
+      if (i > end || plen > (uint32_t)(end - i)) // unsigned: a huge length from a damaged tag can't wrap negative
         return false;
       if (tnf == 0x02 && typeLen == (int)strlen(MIME_TYPE) &&
           memcmp(type, MIME_TYPE, typeLen) == 0)

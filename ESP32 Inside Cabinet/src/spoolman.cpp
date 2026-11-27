@@ -4,6 +4,7 @@
 #include "settings.h"
 #include "rfid.h"
 #include "diag.h"
+#include "moonraker.h"
 
 #define SYNC_STEP_MS 1000   // at most one Spoolman sync per second
 #define SYNC_RETRY_MS 60000 // retry after Spoolman was unreachable
@@ -200,7 +201,7 @@ void spoolSyncLaneChanged(int lane)
   if (lane < 0 || lane >= MAX_LANES)
     return;
   syncs[lane].pending = true;
-  syncs[lane].retryAt = 0;
+  syncs[lane].retryAt = millis(); // not 0: a time 2^31 ms in the past reads as "not yet"
 }
 
 static String laneLocation(int lane)
@@ -263,7 +264,10 @@ static bool findSpool(const char *key, const String &location, SpoolMatch &m, in
   matches = 0;
   HTTPClient http;
   http.setTimeout(8000);
-  http.begin(String(cfg.spoolmanUrl) + "/api/v1/spool");
+  // By location, let Spoolman narrow the list (a partial match; the exact
+  // compare below still decides). It can't filter on extra fields like tag.
+  const bool byTag = key && key[0];
+  http.begin(String(cfg.spoolmanUrl) + "/api/v1/spool" + (byTag ? String() : "?location=" + urlEncode(location)));
   int code = http.GET();
   if (code != 200)
   {
@@ -299,7 +303,6 @@ static bool findSpool(const char *key, const String &location, SpoolMatch &m, in
     err = String("Couldn't parse Spoolman's spool list: ") + e.c_str();
     return false;
   }
-  const bool byTag = key && key[0];
   for (JsonObjectConst s : doc.as<JsonArrayConst>())
   {
     if (byTag ? !extraString(s["extra"]["tag"]).equalsIgnoreCase(key)
